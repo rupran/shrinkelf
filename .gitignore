@@ -1,3 +1,5 @@
 libelf/*
 test/*
 
+shrinkelf
+
