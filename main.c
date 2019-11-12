@@ -26,9 +26,7 @@ int main(int argc, char **argv) {
 	Elf *srce;	// ELF representation of source file
 	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
 		error(0, 0, "elf_begin() failed: %s", elf_errmsg(-1));
-		if (close(srcfd) < 0)
-			error(EXIT_FAILURE, errno, "close %s failed", filename);
-		exit(EXIT_FAILURE);
+		goto err_free_srcfd;
 	}
 
 	elf_end(srce);
@@ -36,4 +34,9 @@ int main(int argc, char **argv) {
 		error(EXIT_FAILURE, errno, "close %s failed", filename);
 
 	return 0;
+
+err_free_srcfd:
+	if (close(srcfd) < 0)
+		error(0, errno, "close %s failed", filename);
+	exit(EXIT_FAILURE);
 }
