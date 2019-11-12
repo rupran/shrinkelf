@@ -24,9 +24,12 @@ int main(int argc, char **argv) {
 		error(EXIT_FAILURE, errno, "open %s failed", filename);
 
 	Elf *srce;	// ELF representation of source file
-	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL)
-		// TODO: close file descriptor
-		error(EXIT_FAILURE, 0, "elf_begin() failed: %s", elf_errmsg(-1));
+	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
+		error(0, 0, "elf_begin() failed: %s", elf_errmsg(-1));
+		if (close(srcfd) < 0)
+			error(EXIT_FAILURE, errno, "close %s failed", filename);
+		exit(EXIT_FAILURE);
+	}
 
 	elf_end(srce);
 	if (close(srcfd) < 0)
