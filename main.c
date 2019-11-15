@@ -60,7 +60,7 @@ int copy_header_info(Elf *srce, Elf *dste) {
 	dstehdr->e_ident[EI_DATA] = srcehdr->e_ident[EI_DATA];
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
-	dstehdr->e_phentsize = srcehdr->e_phentsize;	// FIXME: check why it's 0
+	dstehdr->e_phentsize = srcehdr->e_phentsize;	// FIXME: check why it's 0 - is set by lib and there are no entries
 	dstehdr->e_shentsize = srcehdr->e_shentsize;
 	dstehdr->e_ehsize = srcehdr->e_ehsize;
 	dstehdr->e_flags = srcehdr->e_flags;

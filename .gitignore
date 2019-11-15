@@ -1,5 +1,8 @@
 libelf/*
 test/*
 
+*.swp
+*.un~
+*~
 shrinkelf
 
