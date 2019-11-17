@@ -65,6 +65,8 @@ int copy_header_info(Elf *srce, Elf *dste) {
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
 	dstehdr->e_flags = srcehdr->e_flags;
+	// FIXME: Remove when sections work
+	dstehdr->e_shoff = srcehdr->e_shoff;
 	// TODO: comment what elf_update does to executable headers
 	// nothing. watch out for broken ELF headers!
 	if (elf_update(dste, ELF_C_NULL) == -1) {
@@ -134,6 +136,82 @@ int main(int argc, char **argv) {
 
 	if (copy_header_info(srce, dste) != 0)
 		goto err_free_dste;
+
+	// FIXME: comments!
+	size_t scnnum = 0;		// number of sections in source file
+	if (elf_getshdrnum(srce, &scnnum) != 0) {
+		error(0, 0, "could not retrieve number of sections from source file: %s",
+		      elf_errmsg(-1));
+		goto err_free_dste;
+	}
+	Elf_Scn *srcscn = NULL;
+	// lib creates section 0 automatically
+	for (size_t i = 1; i < scnnum; i++) {
+		srcscn = elf_getscn(srce, i);
+		if (srcscn == NULL)
+			break;
+
+		GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
+		if (srcshdr == NULL) {
+			error(0, 0, "unable to allocate memory for source shdr structure");
+			goto err_free_dste;
+		}
+		GElf_Shdr *tmp = gelf_getshdr(srcscn, srcshdr);
+		if (tmp == NULL) {
+			error(0, 0, "could not retrieve source shdr structure for section %lu: %s",
+			      i, elf_errmsg(-1));
+			goto err_free_dste;
+		}
+		Elf_Scn *dstscn = elf_newscn(dste);
+		if (dstscn == NULL) {
+			error(0, 0, "could not create section %lu: %s", i,
+			      elf_errmsg(-1));
+			goto err_free_dste;
+		}
+		GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
+		if (dstshdr == NULL) {
+			error(0, 0, "unable to allocate memory for new shdr structure");
+			goto err_free_dste;
+		}
+		tmp = gelf_getshdr(dstscn, dstshdr);
+		if (tmp == NULL) {
+			error(0, 0, "could not retrieve new shdr structure for section %lu: %s",
+			      i, elf_errmsg(-1));
+			goto err_free_dste;
+		}
+		dstshdr->sh_info = srcshdr->sh_info;
+		dstshdr->sh_name = srcshdr->sh_name;
+		dstshdr->sh_type = srcshdr->sh_type;
+		dstshdr->sh_addr = srcshdr->sh_addr;
+		dstshdr->sh_flags = srcshdr->sh_flags;
+		dstshdr->sh_offset = srcshdr->sh_offset;
+		dstshdr->sh_size = srcshdr->sh_size;
+		dstshdr->sh_addralign = srcshdr->sh_addralign;
+		dstshdr->sh_entsize = srcshdr->sh_entsize;
+		dstshdr->sh_link = srcshdr->sh_link;
+
+		Elf_Data *srcdata = NULL;
+		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
+			// FIXME: copy info
+			Elf_Data *dstdata = elf_newdata(dstscn);
+			if (dstdata == NULL) {
+				error(0, 0, "could not add data to section %lu: %s",
+				      i, elf_errmsg(-1));
+				goto err_free_dste;
+			}
+			dstdata->d_align = srcdata->d_align;
+			dstdata->d_buf = srcdata->d_buf;
+			dstdata->d_off = srcdata->d_off;
+			dstdata->d_size = srcdata->d_size;
+			dstdata->d_type = srcdata->d_type;
+			dstdata->d_version = srcdata->d_version;
+		}
+	}
+	if (elf_update(dste, ELF_C_NULL) == -1) {
+		error(0, 0, "could not update ELF structures (Sections): %s",
+		      elf_errmsg(-1));
+		goto err_free_dste;
+	}
 
 	// tidy up
 	elf_end(dste);
