@@ -14,13 +14,13 @@
 // TODO: better error messages
 const char *FILESUFFIX = ".shrinked";
 
+// TODO: better wording
 /*
  * sets e_ident, e_machine, e_type and e_flags for the new file
  *
- * e_ehsize, e_phentsize and e_shentsize are set by libelf
+ * e_ehsize, e_phentsize, e_shentsize, e_phnum and e_shnum are set by libelf
  *
- * does NOT set EI_OSABI, EI_ABIVERSION, e_entry, e_phoff, e_shoff, e_phnum,
- * e_shnum and e_shstrndx
+ * does set e_entry, e_phoff, e_shoff and e_shstrndx - as fall back
  */
 int copy_header_info(Elf *srce, Elf *dste) {
 	int elfclass;		//ELF class of source file
@@ -37,7 +37,7 @@ int copy_header_info(Elf *srce, Elf *dste) {
 	if (gelf_getehdr(srce, srcehdr) == NULL) {
 		error(0, 0, "could not retrieve executable header from source file: %s",
 		      elf_errmsg(-1));
-		return -1;
+		goto err_free_srcehdr;
 	}
 	// executable header of new file
 	GElf_Ehdr *dstehdr = calloc(1, sizeof(GElf_Ehdr));
@@ -62,18 +62,28 @@ int copy_header_info(Elf *srce, Elf *dste) {
 		goto err_free_dstehdr;
 	}
 	dstehdr->e_ident[EI_DATA] = srcehdr->e_ident[EI_DATA];
+	dstehdr->e_ident[EI_OSABI] = srcehdr->e_ident[EI_OSABI];
+	dstehdr->e_ident[EI_ABIVERSION] = srcehdr->e_ident[EI_ABIVERSION];
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
 	dstehdr->e_flags = srcehdr->e_flags;
-	// FIXME: Remove when sections work
+	// TODO: better wording
+	// fall back for not adjusting this attributes
 	dstehdr->e_shoff = srcehdr->e_shoff;
-	// TODO: comment what elf_update does to executable headers
-	// nothing. watch out for broken ELF headers!
+	dstehdr->e_phoff = srcehdr->e_phoff;
+	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
+	dstehdr->e_entry = srcehdr->e_entry;
+	if (gelf_update_ehdr(dste, dstehdr) == 0) {
+		error(0, 0, "could not update ELF structures (Header): %s",
+		      elf_errmsg(-1));
+		goto err_free_dstehdr;
+	}
 	if (elf_update(dste, ELF_C_NULL) == -1) {
 		error(0, 0, "could not update ELF structures (Header): %s",
 		      elf_errmsg(-1));
 		goto err_free_dstehdr;
 	}
+
 
 	free(dstehdr);
 	free(srcehdr);
@@ -134,8 +144,77 @@ int main(int argc, char **argv) {
 		goto err_free_dstfd;
 	}
 
-	if (copy_header_info(srce, dste) != 0)
+	unsigned int flags = 0;
+	if ((flags = elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT)) == 0) {
+		error(0, 0, "elf_flagelf() failed: %s.", elf_errmsg(-1));
 		goto err_free_dste;
+	}
+
+	int elfclass;		//ELF class of source file
+	if ((elfclass = gelf_getclass(srce)) == ELFCLASSNONE) {
+		error(0, 0, "could not retrieve ELF class from source file");
+		return -1;
+	}
+	// executable header of source file
+	GElf_Ehdr *srcehdr = calloc(1, sizeof(GElf_Ehdr));
+	if(srcehdr == NULL) {
+		error(0, errno, "unable to allocate memory for executable header of source file");
+		return -1;
+	}
+	if (gelf_getehdr(srce, srcehdr) == NULL) {
+		error(0, 0, "could not retrieve executable header from source file: %s",
+		      elf_errmsg(-1));
+		// FIXME:
+		goto err_free_srce;
+	}
+	// executable header of new file
+	GElf_Ehdr *dstehdr = calloc(1, sizeof(GElf_Ehdr));
+	if(dstehdr == NULL) {
+		error(0, errno, "unable to allocate memory for executable header of new file");
+		// FIXME:
+		goto err_free_srce;
+	}
+	/*
+	 * gelf_newehdr sets automatically the magic numbers of an ELF header,
+	 * the EI_CLASS byte according to elfclass, the EI_VERSION byte and
+	 * e_version to the version you told the library to use.
+	 *
+	 * The EI_DATA byte is set to ELFDATANONE, e_machine to EM_NONE and
+	 * e_type to ELF_K_NONE.
+	 *
+	 * Other members are set to zero. This includes the EI_OSABI and
+	 * EI_ABIVERSION bytes.
+	 */
+	if ((dstehdr = gelf_newehdr(dste, elfclass)) == NULL) {
+		error(0, 0, "could not create executable header of new file: %s",
+		      elf_errmsg(-1));
+		// FIXME:
+		goto err_free_dste;
+	}
+	dstehdr->e_ident[EI_DATA] = srcehdr->e_ident[EI_DATA];
+	dstehdr->e_ident[EI_OSABI] = srcehdr->e_ident[EI_OSABI];
+	dstehdr->e_ident[EI_ABIVERSION] = srcehdr->e_ident[EI_ABIVERSION];
+	dstehdr->e_machine = srcehdr->e_machine;
+	dstehdr->e_type = srcehdr->e_type;
+	dstehdr->e_flags = srcehdr->e_flags;
+	// TODO: better wording
+	// fall back for not adjusting this attributes
+	dstehdr->e_shoff = srcehdr->e_shoff;
+	dstehdr->e_phoff = srcehdr->e_phoff;
+	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
+	dstehdr->e_entry = srcehdr->e_entry;
+	if (gelf_update_ehdr(dste, dstehdr) == 0) {
+		error(0, 0, "could not update ELF structures (Header): %s",
+		      elf_errmsg(-1));
+		// FIXME:
+		goto err_free_dste;
+	}
+	if (elf_update(dste, ELF_C_NULL) == -1) {
+		error(0, 0, "could not update ELF structures (Header): %s",
+		      elf_errmsg(-1));
+		// FIXME:
+		goto err_free_dste;
+	}
 
 	// FIXME: comments!
 	size_t scnnum = 0;		// number of sections in source file
@@ -149,34 +228,37 @@ int main(int argc, char **argv) {
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL)
-			break;
+			goto err_free_dste;
 
 		GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 		if (srcshdr == NULL) {
-			error(0, 0, "unable to allocate memory for source shdr structure");
+			error(0, errno, "unable to allocate memory for source shdr structure");
 			goto err_free_dste;
 		}
-		GElf_Shdr *tmp = gelf_getshdr(srcscn, srcshdr);
-		if (tmp == NULL) {
+		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
 			error(0, 0, "could not retrieve source shdr structure for section %lu: %s",
 			      i, elf_errmsg(-1));
+			free(srcshdr);
 			goto err_free_dste;
 		}
 		Elf_Scn *dstscn = elf_newscn(dste);
 		if (dstscn == NULL) {
 			error(0, 0, "could not create section %lu: %s", i,
 			      elf_errmsg(-1));
+			free(srcshdr);
 			goto err_free_dste;
 		}
 		GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
 		if (dstshdr == NULL) {
-			error(0, 0, "unable to allocate memory for new shdr structure");
+			error(0, errno, "unable to allocate memory for new shdr structure");
+			free(srcshdr);
 			goto err_free_dste;
 		}
-		tmp = gelf_getshdr(dstscn, dstshdr);
-		if (tmp == NULL) {
+		if (gelf_getshdr(dstscn, dstshdr) == NULL) {
 			error(0, 0, "could not retrieve new shdr structure for section %lu: %s",
 			      i, elf_errmsg(-1));
+			free(dstshdr);
+			free(srcshdr);
 			goto err_free_dste;
 		}
 		dstshdr->sh_info = srcshdr->sh_info;
@@ -192,11 +274,12 @@ int main(int argc, char **argv) {
 
 		Elf_Data *srcdata = NULL;
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
-			// FIXME: copy info
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
 				error(0, 0, "could not add data to section %lu: %s",
 				      i, elf_errmsg(-1));
+				free(dstshdr);
+				free(srcshdr);
 				goto err_free_dste;
 			}
 			dstdata->d_align = srcdata->d_align;
@@ -206,10 +289,53 @@ int main(int argc, char **argv) {
 			dstdata->d_type = srcdata->d_type;
 			dstdata->d_version = srcdata->d_version;
 		}
+		if (gelf_update_shdr(dstscn, dstshdr) == 0) {
+			error(0, 0, "could not update ELF structures (Sections): %s",
+			      elf_errmsg(-1));
+			free(dstshdr);
+			free(srcshdr);
+			goto err_free_dste;
+		}
 	}
-	if (elf_update(dste, ELF_C_NULL) == -1) {
-		error(0, 0, "could not update ELF structures (Sections): %s",
+	// segments
+	size_t phdrnum = 0;		// number of segments in source file
+	if (elf_getphdrnum(srce, &phdrnum) != 0) {
+		error(0, 0, "could not retrieve number of segments from source file: %s",
 		      elf_errmsg(-1));
+		goto err_free_dste;
+	}
+	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
+	if (srcphdr == NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_dste;
+	}
+	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrnum);
+	if (dstphdrs == NULL) {
+		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
+		free(srcphdr);
+		goto err_free_dste;
+	}
+	for (size_t i = 0; i < phdrnum; i++) {
+		GElf_Phdr *tmp = gelf_getphdr(srce, i, srcphdr);
+		if (tmp == NULL) {
+			error(0, 0, "could not retrieve source phdr structure %lu: %s",
+			      i, elf_errmsg(-1));
+			free(srcphdr);
+			goto err_free_dste;
+		}
+		dstphdrs[i].p_type = srcphdr->p_type;
+		dstphdrs[i].p_offset = srcphdr->p_offset;
+		dstphdrs[i].p_vaddr = srcphdr->p_vaddr;
+		dstphdrs[i].p_paddr = srcphdr->p_paddr;
+		dstphdrs[i].p_filesz = srcphdr->p_filesz;
+		dstphdrs[i].p_memsz = srcphdr->p_memsz;
+		dstphdrs[i].p_flags = srcphdr->p_flags;
+		dstphdrs[i].p_align = srcphdr->p_align;
+	}
+	if (elf_update(dste, ELF_C_WRITE) == -1) {
+		error(0, 0, "could not update ELF structures: %s",
+		      elf_errmsg(-1));
+		free(srcphdr);
 		goto err_free_dste;
 	}
 
