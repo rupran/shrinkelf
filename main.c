@@ -42,9 +42,10 @@ int main(int argc, char **argv) {
 		error(0, 0, "resulting output filename too long");
 		goto err_free_srce;
 	}
-	char *dstfname = calloc(fnamesz, sizeof(char));
+	// filename of new file
+	char *dstfname = malloc(fnamesz);
 	if(dstfname == NULL) {
-		error(0, errno, "unable to allocate memory for filename");
+		error(0, errno, "unable to allocate memory for new filename");
 		goto err_free_srce;
 	}
 	strncpy(dstfname, filename, strlen(filename));
@@ -62,19 +63,21 @@ int main(int argc, char **argv) {
 		goto err_free_dstfd;
 	}
 
-	unsigned int flags = 0;
-	if ((flags = elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT)) == 0) {
+	if (elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT) == 0) {
 		error(0, 0, "elf_flagelf() failed: %s.", elf_errmsg(-1));
 		goto err_free_dste;
 	}
 
+//-----------------------------------------------------------------------------
+// Copy executable header
+//-----------------------------------------------------------------------------
 	int elfclass;		//ELF class of source file
 	if ((elfclass = gelf_getclass(srce)) == ELFCLASSNONE) {
 		error(0, 0, "could not retrieve ELF class from source file");
 		goto err_free_dste;
 	}
 	// executable header of source file
-	GElf_Ehdr *srcehdr = calloc(1, sizeof(GElf_Ehdr));
+	GElf_Ehdr *srcehdr = malloc(sizeof(GElf_Ehdr));
 	if(srcehdr == NULL) {
 		error(0, errno, "unable to allocate memory for executable header of source file");
 		goto err_free_dste;
@@ -85,7 +88,7 @@ int main(int argc, char **argv) {
 		goto err_free_srcehdr;
 	}
 	// executable header of new file
-	GElf_Ehdr *dstehdr = calloc(1, sizeof(GElf_Ehdr));
+	GElf_Ehdr *dstehdr = malloc(sizeof(GElf_Ehdr));
 	if(dstehdr == NULL) {
 		error(0, errno, "unable to allocate memory for executable header of new file");
 		goto err_free_srcehdr;
@@ -123,32 +126,32 @@ int main(int argc, char **argv) {
 		      elf_errmsg(-1));
 		goto err_free_dstehdr;
 	}
-	if (elf_update(dste, ELF_C_NULL) == -1) {
-		error(0, 0, "could not update ELF structures (Header): %s",
-		      elf_errmsg(-1));
-		goto err_free_dstehdr;
-	}
 
 	// FIXME: comments!
+//-----------------------------------------------------------------------------
+// Copy sections and section headers
+//-----------------------------------------------------------------------------
 	size_t scnnum = 0;		// number of sections in source file
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
 		error(0, 0, "could not retrieve number of sections from source file: %s",
 		      elf_errmsg(-1));
 		goto err_free_dstehdr;
 	}
-	Elf_Scn *srcscn = NULL;
-	// lib creates section 0 automatically
-	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
+	// storage for current section header of source file
+	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		goto err_free_dstehdr;
 	}
-	GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
+	// storage for current section header of new file
+	GElf_Shdr *dstshdr = malloc(sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
 		error(0, errno, "unable to allocate memory for new shdr structure");
 		free(srcshdr);
 		goto err_free_srcshdr;
 	}
+	Elf_Scn *srcscn = NULL;		// current section of source file
+	// lib creates section 0 automatically
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL)
@@ -181,6 +184,7 @@ int main(int argc, char **argv) {
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
+		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
@@ -202,7 +206,11 @@ int main(int argc, char **argv) {
 			goto err_free_dstshdr;
 		}
 	}
-	// segments
+
+	// FIXME: comments
+//-----------------------------------------------------------------------------
+// Copy program headers
+//-----------------------------------------------------------------------------
 	size_t phdrnum = 0;		// number of segments in source file
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s",
@@ -220,8 +228,7 @@ int main(int argc, char **argv) {
 		goto err_free_srcphdr;
 	}
 	for (size_t i = 0; i < phdrnum; i++) {
-		GElf_Phdr *tmp = gelf_getphdr(srce, i, srcphdr);
-		if (tmp == NULL) {
+		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s",
 			      i, elf_errmsg(-1));
 			goto err_free_srcphdr;
