@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <string.h>
+#include <stdio.h>
 
 #include "libelf/libelf.h"
 #include "libelf/gelf.h"
@@ -14,12 +15,154 @@
 // TODO: better error messages
 const char *FILESUFFIX = ".shrinked";
 
-int main(int argc, char **argv) {
-	// TODO: better command line parsing
-	if (argc != 2)
-		error(EXIT_FAILURE, 0, "usage: %s file-name", argv[0]);
+typedef struct range{
+	unsigned long long from;
+	unsigned long long to;
+} Range;
 
-	char *filename = argv[1];
+struct chain;
+
+typedef struct chain{
+	Range data;
+	struct chain *next;
+} Chain;
+
+/*
+ * Get element from list by index.
+ * Returns NULL if there is no entry with correspondig index.
+ */
+Chain *get(Chain *start, unsigned int index) {
+	Chain *tmp = start;
+	while (index > 0) {
+		if (tmp == NULL)
+			return NULL;
+		tmp = tmp->next;
+		index--;
+	}
+	return tmp;
+}
+
+/*
+ * Insert element elem in list start. List is sorted.
+ * Returns -1 if ranges overlap.
+ */
+int insert(Chain *start, Chain *elem) {
+	if (elem->data.from < start->data.from) {
+		if (elem->data.to > start->data.from)
+			//ranges overlap
+			return -1;
+
+		Range tmp;
+		tmp.from = elem->data.from;
+		tmp.to = elem->data.to;
+
+		elem->next = start->next;
+		start->next = elem;
+		elem->data.from = start->data.from;
+		elem->data.to = start->data.to;
+		start->data.from = tmp.from;
+		start->data.to = tmp.to;
+	}
+	else {
+		Chain *ahead = start->next;		// FIXME: better name
+		Chain *following = start;		// FIXME: better name
+		while (ahead != NULL && elem->data.from < ahead->data.from) {
+			following = ahead;
+			ahead = ahead->next;
+		}
+		if (following->data.to > elem->data.from)
+			// ranges overlap
+			return -1;
+		if (ahead != NULL && elem->data.to > ahead->data.from)
+			// ranges overlap
+			return -1;
+
+		following->next = elem;
+		elem->next = ahead;
+	}
+	return 0;
+}
+
+// FIXME: comments
+void deleteList(Chain *start) {
+	Chain *tmp = start->next;
+	free(start);
+	while (tmp != NULL) {
+		start = tmp;
+		tmp = tmp->next;
+		free(start);
+	}
+}
+
+int main(int argc, char **argv) {
+	Chain *ranges = NULL;
+
+	int opt;
+	while ((opt = getopt(argc, argv, "hk:")) != -1) {
+		switch (opt) {
+			case 'k':
+				// you can't have a label on a declaration
+				// because of it's C
+				;
+				// FIXME: variable names
+				// FIXME: error messages
+				char *p = strpbrk(optarg, ":-");
+				if (p == NULL) {
+					error(0, 0, "Invalid remove argument '%s' - ignoring!", optarg);
+				} else {
+					errno = 0;
+					Chain *tmp = malloc(sizeof(Chain));
+					tmp->next = NULL;
+					char *f = NULL;
+					tmp->data.from = strtoull(optarg, &f, 0);
+					char *t = NULL;
+					tmp->data.to = strtoull(p + 1, &t, 0);
+					if ((tmp->data.from == 0 && f == optarg) || (tmp->data.to == 0 && t == p + 1) || errno != 0 || f != p || *t != '\0') {
+						error(0, 0, "Remove argument '%s' not parsable - ignoring!", optarg);
+					} else {
+						if (*p == ':') {
+							tmp->data.to += tmp->data.from;
+						}
+						if (tmp->data.to <= tmp->data.from) {
+							error(0, 0, "Invalid range '%s' - ignoring!", optarg);
+						} else {
+							if (ranges == NULL)
+								ranges = tmp;
+							else
+								insert(ranges, tmp);
+						}
+					}
+				}
+				break;
+			case 'h':
+			case '?':
+				printf("Usage: shrinkelf [-h] INPUT\n");
+				printf("   -h        Print this help\n");
+				printf("   -k RANGE  Keep given RANGE. Accepted formats are\n");
+				printf("               'START-END' exclusive END\n");
+				printf("               'START:LEN' LEN in bytes\n");
+				printf("             with common prefixes for base.\n");
+				printf("   INPUT     Input file\n");
+				return 0;
+			default:
+				error(EXIT_FAILURE, 0,
+				      "Invalid parameter '-%c', abort (use -h for help).",
+				      opt);
+		}
+	}
+
+	if (optind >= argc)
+		error(EXIT_FAILURE, 0, "No input file (use -h for help)");
+
+	// Debugging - FIXME: remove!
+	Chain *tmp = ranges;
+	while (tmp != NULL) {
+		printf("Range from %llu to %llu\n", tmp->data.from, tmp->data.to);
+		tmp = tmp->next;
+	}
+	free(ranges);
+
+	char *filename = argv[optind];
 
 	// libelf-library won't work if you don't tell it the ELF version
 	if (elf_version(EV_CURRENT) == EV_NONE)
@@ -155,6 +298,7 @@ int main(int argc, char **argv) {
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL)
+			// FIXME: error message
 			goto err_free_dstshdr;
 
 		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
@@ -173,16 +317,6 @@ int main(int argc, char **argv) {
 			      i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
-		dstshdr->sh_info = srcshdr->sh_info;
-		dstshdr->sh_name = srcshdr->sh_name;
-		dstshdr->sh_type = srcshdr->sh_type;
-		dstshdr->sh_addr = srcshdr->sh_addr;
-		dstshdr->sh_flags = srcshdr->sh_flags;
-		dstshdr->sh_offset = srcshdr->sh_offset;
-		dstshdr->sh_size = srcshdr->sh_size;
-		dstshdr->sh_addralign = srcshdr->sh_addralign;
-		dstshdr->sh_entsize = srcshdr->sh_entsize;
-		dstshdr->sh_link = srcshdr->sh_link;
 
 		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
@@ -194,12 +328,24 @@ int main(int argc, char **argv) {
 				goto err_free_dstshdr;
 			}
 			dstdata->d_align = srcdata->d_align;
+			dstdata->d_type = srcdata->d_type;
+			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = srcdata->d_buf;
 			dstdata->d_off = srcdata->d_off;
 			dstdata->d_size = srcdata->d_size;
-			dstdata->d_type = srcdata->d_type;
-			dstdata->d_version = srcdata->d_version;
 		}
+
+		dstshdr->sh_info = srcshdr->sh_info;
+		dstshdr->sh_name = srcshdr->sh_name;
+		dstshdr->sh_type = srcshdr->sh_type;
+		dstshdr->sh_addr = srcshdr->sh_addr;
+		dstshdr->sh_flags = srcshdr->sh_flags;
+		dstshdr->sh_offset = srcshdr->sh_offset;
+		dstshdr->sh_size = srcshdr->sh_size;
+		dstshdr->sh_addralign = srcshdr->sh_addralign;
+		dstshdr->sh_entsize = srcshdr->sh_entsize;
+		dstshdr->sh_link = srcshdr->sh_link;
+
 		if (gelf_update_shdr(dstscn, dstshdr) == 0) {
 			error(0, 0, "could not update ELF structures (Sections): %s",
 			      elf_errmsg(-1));
