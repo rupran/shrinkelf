@@ -103,6 +103,7 @@ void deleteList(Chain *start) {
  */
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
 	// storage for current section header of source file
+	errno = 0;
 	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
@@ -124,39 +125,9 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 		if (srcshdr->sh_type == SHT_NOBITS)
 			// no content in section => no bits to keep
 			continue;
-/*
-		if (current->data.to > srcshdr->sh_offset) {
-			// data to keep
-			Chain *tmp = malloc(sizeof(Chain));
-			if (tmp == NULL) {
-				error(0, errno, "unable to allocate memory");
-				goto err_free_srcshdr2;
-			}
-
-			tmp->next = NULL;
-			if (current->data.from < srcshdr->sh_offset)
-				tmp->data.from = 0;
-			else
-				tmp->data.from = current->data.from - srcshdr->sh_offset;
-
-			if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size) {
-				tmp->data.to = current->data.to - srcshdr->sh_offset;
-				current = current->next;
-			}
-			// FIXME: nächstes Listenelement
-			else
-				tmp->data.to = srcshdr->sh_size;
-
-			if (dest[i].data.to == 0) {
-				dest[i].data.from = tmp->data.from;
-				dest[i].data.to = tmp->data.to;
-			}
-			else
-				insert(&dest[i], tmp);
-		}
-*/
 
 		while (current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
+			errno = 0;
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
@@ -185,6 +156,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 		}
 
 		if (current->data.from < srcshdr->sh_offset + srcshdr->sh_size) {
+			errno = 0;
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
@@ -196,7 +168,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->data.from = 0;
 			else
 				tmp->data.from = current->data.from - srcshdr->sh_offset;
-			printf("current: %llu, srchdr: %lu\n", current->data.from, srcshdr->sh_offset);
 			tmp->data.to = srcshdr->sh_size;
 
 			if (dest[i].data.to == 0) {
@@ -242,6 +213,7 @@ int main(int argc, char **argv) {
 					if (tmp->data.from == ULLONG_MAX && errno != 0)
 						error(0, errno, "First part of range argument '%s' not parsable - ignoring!", optarg);
 					char *to = NULL;
+					errno = 0;
 					tmp->data.to = strtoull(split + 1, &to, 0);
 					if (tmp->data.to == ULLONG_MAX && errno != 0)
 						error(0, errno, "Second part of range argument '%s' not parsable - ignoring!", optarg);
@@ -281,11 +253,13 @@ int main(int argc, char **argv) {
 		error(EXIT_FAILURE, 0, "No input file (use -h for help)");
 
 	// XXX: Debugging - remove!
+/*
 	Chain *tmp = ranges;
 	while (tmp != NULL) {
 		printf("Range from %llu to %llu\n", tmp->data.from, tmp->data.to);
 		tmp = tmp->next;
 	}
+*/
 
 	char *filename = argv[optind];
 
@@ -294,6 +268,7 @@ int main(int argc, char **argv) {
 		error(EXIT_FAILURE, 0, "ELF library initialization failed: %s", elf_errmsg(-1));
 
 	int srcfd;	// file descriptor of source file
+	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0)
 		error(EXIT_FAILURE, errno, "unable to open %s", filename);
 	Elf *srce;	// ELF representation of source file
@@ -308,6 +283,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "resulting output filename too long");
 		goto err_free_srce;
 	}
+	errno = 0;
 	// filename of new file
 	char *dstfname = malloc(fnamesz);
 	if(dstfname == NULL) {
@@ -318,6 +294,7 @@ int main(int argc, char **argv) {
 	strncat(dstfname, FILESUFFIX, strlen(FILESUFFIX));
 
 	int dstfd;	// file descriptor of new file
+	errno = 0;
 	if ((dstfd = open(dstfname, O_WRONLY | O_CREAT, 0777)) < 0) {
 		error(0, errno, "unable to open %s", dstfname);
 		goto err_free_dstfname;
@@ -341,6 +318,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve ELF class from source file");
 		goto err_free_dste;
 	}
+	errno = 0;
 	// executable header of source file
 	GElf_Ehdr *srcehdr = malloc(sizeof(GElf_Ehdr));
 	if(srcehdr == NULL) {
@@ -351,6 +329,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve executable header from source file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
+	errno = 0;
 	// executable header of new file
 	GElf_Ehdr *dstehdr = malloc(sizeof(GElf_Ehdr));
 	if(dstehdr == NULL) {
@@ -398,12 +377,14 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
 		goto err_free_dstehdr;
 	}
+	errno = 0;
 	// storage for current section header of source file
 	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		goto err_free_dstehdr;
 	}
+	errno = 0;
 	// storage for current section header of new file
 	GElf_Shdr *dstshdr = malloc(sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
@@ -412,7 +393,7 @@ int main(int argc, char **argv) {
 		goto err_free_srcshdr;
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
-	tmp = ranges;		// XXX: prototype removing
+	errno = 0;
 	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
 	if (section_ranges == NULL) {
 		error(0, errno, "unable to allocate memory");
@@ -453,43 +434,25 @@ int main(int argc, char **argv) {
 			goto err_free_dstshdr;
 		}
 
-		size_t section_offset = srcshdr->sh_offset;	// XXX: prototype removing
 		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
-			while (tmp->data.from <= section_offset + srcdata->d_off + srcdata->d_size) {		// XXX: prototype removing - FIXME: removing last bytes
-				// XXX: prototype removing
-				ssize_t buffer_offset = tmp->data.from - (section_offset + srcdata->d_off);
-				if (buffer_offset < 0)
-					buffer_offset = 0;
-				if ((srcdata->d_off + buffer_offset) % srcdata->d_align != 0) {
-					error(0, 0, "section %lu is misaligned by %lu bytes - aborting", i, (srcdata->d_off + buffer_offset) % srcdata->d_align);
-					goto err_free_dstshdr;
-				}
-				// FIXME: buffer size depends on old size, range to keep and offset in the databuffer
-				size_t buffer_size = tmp->data.to - tmp->data.from;
-				if (buffer_size > srcdata->d_size)
-					buffer_size = srcdata->d_size;
-
-				Elf_Data *dstdata = elf_newdata(dstscn);
-				if (dstdata == NULL) {
-					error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
-					goto err_free_dstshdr;
-				}
-				dstdata->d_align = srcdata->d_align;
-				dstdata->d_type = srcdata->d_type;
-				dstdata->d_version = srcdata->d_version;
-				// XXX: prototype removing - FIXME: alignment
-				dstdata->d_buf = srcdata->d_buf + buffer_offset;
-				dstdata->d_off = srcdata->d_off + buffer_offset;
-				dstdata->d_size = buffer_size;
-				// XXX: prototype removing
-				if (tmp->data.to > section_offset + srcdata->d_off + srcdata->d_size)
-					break;
-				tmp = tmp->next;
+			// FIXME: buffer size depends on old size, range to keep and offset in the databuffer
+			Elf_Data *dstdata = elf_newdata(dstscn);
+			if (dstdata == NULL) {
+				error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
+				goto err_free_dstshdr;
 			}
 		}
-
+/*
+	dstdata->d_align = srcdata->d_align;
+	dstdata->d_type = srcdata->d_type;
+	dstdata->d_version = srcdata->d_version;
+	// XXX: prototype removing - FIXME: alignment
+	dstdata->d_buf = srcdata->d_buf + buffer_offset;
+	dstdata->d_off = srcdata->d_off + buffer_offset;
+	dstdata->d_size = buffer_size;
+*/
 		dstshdr->sh_info = srcshdr->sh_info;
 		dstshdr->sh_name = srcshdr->sh_name;
 		dstshdr->sh_type = srcshdr->sh_type;
@@ -516,6 +479,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		goto err_free_dstshdr;
 	}
+	errno = 0;
 	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
@@ -552,11 +516,13 @@ int main(int argc, char **argv) {
 	free(dstehdr);
 	free(srcehdr);
 	elf_end(dste);
+	errno = 0;
 	if (close(dstfd) < 0) {
 		error(0, errno, "unable to close %s", dstfname);
 		goto err_free_dstfname;
 	}
 	free(dstfname);
+	errno = 0;
 	elf_end(srce);
 	if (close(srcfd) < 0)
 		error(EXIT_FAILURE, errno, "unable to close %s", filename);
@@ -576,6 +542,7 @@ err_free_srcehdr:
 err_free_dste:
 	elf_end(dste);
 err_free_dstfd:
+	errno = 0;
 	if (close(dstfd) < 0)
 		error(0, errno, "unable to close %s", dstfname);
 err_free_dstfname:
@@ -583,6 +550,7 @@ err_free_dstfname:
 err_free_srce:
 	elf_end(srce);
 err_free_srcfd:
+	errno = 0;
 	if (close(srcfd) < 0)
 		error(0, errno, "unable to close %s", filename);
 	exit(EXIT_FAILURE);
