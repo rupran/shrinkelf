@@ -98,6 +98,28 @@ void deleteList(Chain *start) {
 	}
 }
 
+size_t size(Chain *start) {
+	if (start->data.to == 0)
+		// no elements in list
+		return 0;
+
+	size_t ret = 1;
+	while (start->next != NULL) {
+		ret++;
+		start = start->next;
+	}
+	return ret;
+}
+
+size_t find (Chain *start, unsigned long long from) {
+	size_t ret = 0;
+	while (start->data.from < from) {
+		ret++;
+		start = start->next;
+	}
+	return ret;
+}
+
 /*
  * compute the ranges to keep per section and store them in array dest
  */
@@ -436,15 +458,47 @@ int main(int argc, char **argv) {
 
 		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
-		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
-			// FIXME: buffer size depends on old size, range to keep and offset in the databuffer
-			Elf_Data *dstdata = elf_newdata(dstscn);
-			if (dstdata == NULL) {
-				error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
+		char *data_buffers[size(&section_ranges[i])];
+		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
+			Chain *tmp = get(&section_ranges[i], j);
+			errno = 0;
+			data_buffers[j] = calloc(tmp->data.to - tmp->data.from, sizeof(char));
+			if (data_buffers[j] == NULL) {
+				error(0, errno, "Unable to allocate memory");
 				goto err_free_dstshdr;
 			}
 		}
+		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
+			// FIXME: databuffer contains only a part of range to keep
+			size_t srcdata_begin = srcdata->d_off;
+			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
+			size_t index = find(&section_ranges[i], srcdata_begin);
+			Chain *tmp = get(&section_ranges[i], index);
+			size_t data_size = 0;
+			while (tmp->data.to <= srcdata_end) {
+				// range is in srcdata->d_buf
+				data_size = tmp->data.to - tmp->data.from;
+				memcpy(data_buffers[index], srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+				// advance to next range, while condition checks if that range is still in srcdata->d_buf
+				tmp = tmp->next;
+				index++;
+			}
+			if (tmp->data.from < srcdata_end) {
+				// beginning of range is in srcdata->d_buf, end of range is not
+				// maybe this will not happen at all, but libelf does not guarantee that
+				data_size = srcdata_end - tmp->data.from;
+				memcpy(data_buffers[index], srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+				// FIXME: offset in destination buffer
+				tmp->data.from += data_size;
+			}
+		}
 /*
+	// FIXME: buffer size depends on old size, range to keep and offset in the databuffer
+	Elf_Data *dstdata = elf_newdata(dstscn);
+	if (dstdata == NULL) {
+		error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
+		goto err_free_dstshdr;
+	}
 	dstdata->d_align = srcdata->d_align;
 	dstdata->d_type = srcdata->d_type;
 	dstdata->d_version = srcdata->d_version;
