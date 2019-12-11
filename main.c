@@ -13,6 +13,8 @@
 #include "libelf/gelf.h"
 
 
+#define PAGESIZE 0x1000
+
 // TODO: better error messages
 const char *FILESUFFIX = ".shrinked";
 
@@ -148,7 +150,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			// no content in section => no bits to keep
 			continue;
 
-		while (current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
+		// FIXME: current gleich NULL
+		while (current && current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
 			errno = 0;
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
@@ -177,7 +180,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			current = current->next;
 		}
 
-		if (current->data.from < srcshdr->sh_offset + srcshdr->sh_size) {
+		if (current && current->data.from < srcshdr->sh_offset + srcshdr->sh_size) {
 			errno = 0;
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
@@ -201,12 +204,20 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				insert(&dest[i], tmp);
 		}
 	}
-	printf("\n\n\n");
 	return 0;
 
 err_free_srcshdr2:
 	free(srcshdr);
 	return -1;
+}
+
+size_t calculateCeil(size_t value, size_t base) {
+	size_t tmp = value % base;
+	return value - tmp + base;
+}
+
+size_t calculateOffsetInPage(size_t addr) {
+	return addr % PAGESIZE;
 }
 
 int main(int argc, char **argv) {
@@ -332,6 +343,9 @@ int main(int argc, char **argv) {
 		goto err_free_dste;
 	}
 
+	// XXX: Debug
+	// elf_fill(0xff);
+
 //-----------------------------------------------------------------------------
 // Copy executable header
 //-----------------------------------------------------------------------------
@@ -425,22 +439,13 @@ int main(int argc, char **argv) {
 		goto err_free_dstshdr;
 	}
 
-	// XXX: Debug
-	for (size_t i = 0; i < scnnum; i++) {
-		printf("Section %lu\n", i);
-		Chain *tmp = &section_ranges[i];
-		while (tmp != NULL) {
-			printf("Range from %llx to %llx\n", tmp->data.from, tmp->data.to);
-			tmp = tmp->next;
-		}
-		printf("\n");
-	}
 	// lib creates section 0 automatically
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
-		if (srcscn == NULL)
+		if (srcscn == NULL) {
 			error(0, 0, "could not retrieve source section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
+		}
 
 		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
 			error(0, 0, "could not retrieve source shdr structure for section %lu: %s", i, elf_errmsg(-1));
@@ -456,8 +461,6 @@ int main(int argc, char **argv) {
 			goto err_free_dstshdr;
 		}
 
-		// current data of current section of source file
-		Elf_Data *srcdata = NULL;
 		char *data_buffers[size(&section_ranges[i])];
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Chain *tmp = get(&section_ranges[i], j);
@@ -468,12 +471,20 @@ int main(int argc, char **argv) {
 				goto err_free_dstshdr;
 			}
 		}
+
+		// current data of current section of source file
+		Elf_Data *srcdata = NULL;
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
 			// FIXME: databuffer contains only a part of range to keep
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
 			size_t index = find(&section_ranges[i], srcdata_begin);
+			// FIXME: tmp auf NULL testen
 			Chain *tmp = get(&section_ranges[i], index);
+			if (tmp == NULL) {
+				// zero elements to process
+				printf("Zero elements to process");
+			}
 			size_t data_size = 0;
 			while (tmp->data.to <= srcdata_end) {
 				// range is in srcdata->d_buf
@@ -482,39 +493,59 @@ int main(int argc, char **argv) {
 				// advance to next range, while condition checks if that range is still in srcdata->d_buf
 				tmp = tmp->next;
 				index++;
+				if (tmp == NULL) {
+					// reached end of list
+					goto new_data;
+				}
 			}
+
 			if (tmp->data.from < srcdata_end) {
 				// beginning of range is in srcdata->d_buf, end of range is not
 				// maybe this will not happen at all, but libelf does not guarantee that
 				data_size = srcdata_end - tmp->data.from;
 				memcpy(data_buffers[index], srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
 				// FIXME: offset in destination buffer
-				tmp->data.from += data_size;
 			}
 		}
-/*
-	// FIXME: buffer size depends on old size, range to keep and offset in the databuffer
-	Elf_Data *dstdata = elf_newdata(dstscn);
-	if (dstdata == NULL) {
-		error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
-		goto err_free_dstshdr;
-	}
-	dstdata->d_align = srcdata->d_align;
-	dstdata->d_type = srcdata->d_type;
-	dstdata->d_version = srcdata->d_version;
-	// XXX: prototype removing - FIXME: alignment
-	dstdata->d_buf = srcdata->d_buf + buffer_offset;
-	dstdata->d_off = srcdata->d_off + buffer_offset;
-	dstdata->d_size = buffer_size;
-*/
+
+new_data:
+		;
+		// FIXME: srcdata nicht verwenden
+		size_t current_offset = srcshdr->sh_offset;
+		size_t section_offset = calculateOffsetInPage(srcshdr->sh_offset);
+		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
+			Elf_Data *dstdata = elf_newdata(dstscn);
+			if (dstdata == NULL) {
+				error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
+				goto err_free_dstshdr;
+			}
+
+			Chain *tmp = get(&section_ranges[i], j);
+			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
+			if ((current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align != 0) {
+				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in file: %lu, aligment: %lu)", i, (current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align, current_offset - section_offset + off + srcshdr->sh_offset, srcdata->d_align);
+				goto err_free_dstshdr;
+			}
+			printf("in section %lu: range to keep is misaligned by %lu bytes (offset in file: %lu, aligment: %lu)\n", i, (current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align, current_offset - section_offset + off + srcshdr->sh_offset, srcdata->d_align);
+			dstdata->d_align = PAGESIZE;
+			dstdata->d_type = srcdata->d_type;
+			dstdata->d_version = srcdata->d_version;
+			dstdata->d_buf = data_buffers[j];
+			// FIXME: zusammenschieben
+			dstdata->d_off = current_offset - section_offset + off;
+			dstdata->d_size = tmp->data.to - tmp->data.from;
+			current_offset = calculateCeil(current_offset + dstdata->d_size, PAGESIZE);
+		}
+
 		dstshdr->sh_info = srcshdr->sh_info;
 		dstshdr->sh_name = srcshdr->sh_name;
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
+		// FIXME: zusammenschieben
 		dstshdr->sh_offset = srcshdr->sh_offset;
-		dstshdr->sh_size = srcshdr->sh_size;
-		dstshdr->sh_addralign = srcshdr->sh_addralign;
+		dstshdr->sh_size = current_offset;
+		dstshdr->sh_addralign = PAGESIZE;
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
