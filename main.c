@@ -511,8 +511,7 @@ int main(int argc, char **argv) {
 new_data:
 		;
 		// FIXME: srcdata nicht verwenden
-		size_t current_offset = srcshdr->sh_offset;
-		size_t section_offset = calculateOffsetInPage(srcshdr->sh_offset);
+		size_t current_offset = srcshdr->sh_offset - (srcshdr->sh_offset % PAGESIZE);
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
@@ -522,19 +521,28 @@ new_data:
 
 			Chain *tmp = get(&section_ranges[i], j);
 			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
-			if ((current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align != 0) {
-				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in file: %lu, aligment: %lu)", i, (current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align, current_offset - section_offset + off + srcshdr->sh_offset, srcdata->d_align);
+
+			// XXX: Debug
+			printf("in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)\n", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
+			printf("data from %llu, data to %llu\n\n", tmp->data.from, tmp->data.to);
+
+			// FIXME: sinnvollere Methode, den Wert von d_align zu überprüfen
+			if (srcdata->d_align != 65536 && (current_offset + off - srcshdr->sh_offset) % srcdata->d_align != 0) {
+				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
 				goto err_free_dstshdr;
 			}
-			printf("in section %lu: range to keep is misaligned by %lu bytes (offset in file: %lu, aligment: %lu)\n", i, (current_offset - section_offset + off + srcshdr->sh_offset) % srcdata->d_align, current_offset - section_offset + off + srcshdr->sh_offset, srcdata->d_align);
-			dstdata->d_align = PAGESIZE;
+			// FIXME:
+			if (srcdata->d_align == 65536)
+				dstdata->d_align = 16;
+			else
+				dstdata->d_align = srcdata->d_align;
 			dstdata->d_type = srcdata->d_type;
 			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = data_buffers[j];
 			// FIXME: zusammenschieben
-			dstdata->d_off = current_offset - section_offset + off;
+			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
-			current_offset = calculateCeil(current_offset + dstdata->d_size, PAGESIZE);
+			current_offset = calculateCeil(current_offset + off + dstdata->d_size, PAGESIZE);
 		}
 
 		dstshdr->sh_info = srcshdr->sh_info;
@@ -544,8 +552,13 @@ new_data:
 		dstshdr->sh_flags = srcshdr->sh_flags;
 		// FIXME: zusammenschieben
 		dstshdr->sh_offset = srcshdr->sh_offset;
-		dstshdr->sh_size = current_offset;
-		dstshdr->sh_addralign = PAGESIZE;
+		// FIXME:
+		dstshdr->sh_size = srcshdr->sh_size;
+		// FIXME:
+		if (srcshdr->sh_addralign == 65536)
+			dstshdr->sh_addralign = 16;
+		else
+			dstshdr->sh_addralign = srcshdr->sh_addralign;
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
