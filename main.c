@@ -512,6 +512,7 @@ new_data:
 		;
 		// FIXME: srcdata nicht verwenden
 		size_t current_offset = srcshdr->sh_offset - (srcshdr->sh_offset % PAGESIZE);
+		size_t current_size = 0;
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
@@ -542,6 +543,7 @@ new_data:
 			// FIXME: zusammenschieben
 			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
+			current_size = current_offset + dstdata->d_size;
 			current_offset = calculateCeil(current_offset + off + dstdata->d_size, PAGESIZE);
 		}
 
@@ -553,7 +555,7 @@ new_data:
 		// FIXME: zusammenschieben
 		dstshdr->sh_offset = srcshdr->sh_offset;
 		// FIXME:
-		dstshdr->sh_size = srcshdr->sh_size;
+		dstshdr->sh_size = current_size;
 		// FIXME:
 		if (srcshdr->sh_addralign == 65536)
 			dstshdr->sh_addralign = 16;
