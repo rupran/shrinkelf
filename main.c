@@ -213,7 +213,10 @@ err_free_srcshdr2:
 
 size_t calculateCeil(size_t value, size_t base) {
 	size_t tmp = value % base;
-	return value - tmp + base;
+	if (tmp != 0)
+		return value - tmp + base;
+	else
+		return value;
 }
 
 size_t calculateOffsetInPage(size_t addr) {
