@@ -443,6 +443,7 @@ int main(int argc, char **argv) {
 	}
 
 	// lib creates section 0 automatically
+	size_t current_filesize = 0;
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL) {
@@ -463,6 +464,9 @@ int main(int argc, char **argv) {
 			error(0, 0, "could not retrieve new shdr structure for section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
+
+		if (i == 1)
+			current_filesize = srcshdr->sh_offset;
 
 		char *data_buffers[size(&section_ranges[i])];
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
@@ -555,18 +559,20 @@ new_data:
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
-		// FIXME: zusammenschieben
-		dstshdr->sh_offset = srcshdr->sh_offset;
-		// FIXME:
-		if (srcshdr->sh_type == SHT_NOBITS)
-			dstshdr->sh_size = srcshdr->sh_size;
-		else
-			dstshdr->sh_size = current_size;
 		// FIXME:
 		if (srcshdr->sh_addralign == 65536)
 			dstshdr->sh_addralign = 16;
 		else
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
+		// FIXME: zusammenschieben
+		dstshdr->sh_offset = calculateCeil(current_filesize, dstshdr->sh_addralign);
+		// XXX: Debug
+		printf("current filesize: %lu, aligment: %lu, section offset (old): %lu, section offset (new): %lu\n", current_filesize, dstshdr->sh_addralign, srcshdr->sh_offset, dstshdr->sh_offset);
+		// FIXME:
+		if (srcshdr->sh_type == SHT_NOBITS)
+			dstshdr->sh_size = srcshdr->sh_size;
+		else
+			dstshdr->sh_size = current_size;
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
@@ -574,6 +580,7 @@ new_data:
 			error(0, 0, "could not update ELF structures (Sections): %s", elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
+		current_filesize = dstshdr->sh_offset + dstshdr->sh_size;
 	}
 
 	// FIXME: comments
