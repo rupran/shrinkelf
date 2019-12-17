@@ -523,10 +523,6 @@ new_data:
 			Chain *tmp = get(&section_ranges[i], j);
 			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
 
-			// XXX: Debug
-			printf("in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)\n", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
-			printf("data from %llu, data to %llu\n\n", tmp->data.from, tmp->data.to);
-
 			// FIXME: sinnvollere Methode, den Wert von d_align zu überprüfen
 			if (srcdata->d_align != 65536 && (current_offset + off - srcshdr->sh_offset) % srcdata->d_align != 0) {
 				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
@@ -543,7 +539,11 @@ new_data:
 			// FIXME: zusammenschieben
 			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
-			current_size = current_offset + dstdata->d_size - srcshdr->sh_offset;
+			if (current_offset < srcshdr->sh_offset)
+				// first data range
+				current_size = dstdata->d_size;
+			else
+				current_size = current_offset + dstdata->d_size - srcshdr->sh_offset;
 			current_offset = calculateCeil(current_offset + off + dstdata->d_size, PAGESIZE);
 		}
 
