@@ -555,7 +555,10 @@ new_data:
 		// FIXME: zusammenschieben
 		dstshdr->sh_offset = srcshdr->sh_offset;
 		// FIXME:
-		dstshdr->sh_size = current_size;
+		if (srcshdr->sh_type == SHT_NOBITS)
+			dstshdr->sh_size = srcshdr->sh_size;
+		else
+			dstshdr->sh_size = current_size;
 		// FIXME:
 		if (srcshdr->sh_addralign == 65536)
 			dstshdr->sh_addralign = 16;
