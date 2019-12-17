@@ -543,7 +543,7 @@ new_data:
 			// FIXME: zusammenschieben
 			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
-			current_size = current_offset + dstdata->d_size;
+			current_size = current_offset + dstdata->d_size - srcshdr->sh_offset;
 			current_offset = calculateCeil(current_offset + off + dstdata->d_size, PAGESIZE);
 		}
 
