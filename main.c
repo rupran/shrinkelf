@@ -288,15 +288,6 @@ int main(int argc, char **argv) {
 	if (optind >= argc)
 		error(EXIT_FAILURE, 0, "No input file (use -h for help)");
 
-	// XXX: Debugging - remove!
-/*
-	Chain *tmp = ranges;
-	while (tmp != NULL) {
-		printf("Range from %llu to %llu\n", tmp->data.from, tmp->data.to);
-		tmp = tmp->next;
-	}
-*/
-
 	char *filename = argv[optind];
 
 	// libelf-library won't work if you don't tell it the ELF version
@@ -530,12 +521,12 @@ new_data:
 			Chain *tmp = get(&section_ranges[i], j);
 			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
 
-			// FIXME: sinnvollere Methode, den Wert von d_align zu überprüfen
+			// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 			if (srcdata->d_align != 65536 && (current_offset + off - srcshdr->sh_offset) % srcdata->d_align != 0) {
 				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
 				goto err_free_dstshdr;
 			}
-			// FIXME:
+			// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 			if (srcdata->d_align == 65536)
 				dstdata->d_align = 16;
 			else
@@ -543,7 +534,6 @@ new_data:
 			dstdata->d_type = srcdata->d_type;
 			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = data_buffers[j];
-			// FIXME: zusammenschieben
 			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
 			if (current_offset < srcshdr->sh_offset)
@@ -559,15 +549,14 @@ new_data:
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
-		// FIXME:
+		// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 		if (srcshdr->sh_addralign == 65536)
 			dstshdr->sh_addralign = 16;
 		else
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
-		// FIXME: zusammenschieben
 		dstshdr->sh_offset = calculateCeil(current_filesize, dstshdr->sh_addralign);
 		// XXX: Debug
-		printf("current filesize: %lu, aligment: %lu, section offset (old): %lu, section offset (new): %lu\n", current_filesize, dstshdr->sh_addralign, srcshdr->sh_offset, dstshdr->sh_offset);
+		//printf("current filesize: %lu, aligment: %lu, section offset (old): %lu, section offset (new): %lu\n", current_filesize, dstshdr->sh_addralign, srcshdr->sh_offset, dstshdr->sh_offset);
 		// FIXME:
 		if (srcshdr->sh_type == SHT_NOBITS)
 			dstshdr->sh_size = srcshdr->sh_size;
