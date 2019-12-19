@@ -338,7 +338,7 @@ int main(int argc, char **argv) {
 	}
 
 	// XXX: Debug
-	// elf_fill(0xff);
+	elf_fill(0xaa);
 
 //-----------------------------------------------------------------------------
 // Copy executable header
@@ -569,7 +569,8 @@ new_data:
 			error(0, 0, "could not update ELF structures (Sections): %s", elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
-		current_filesize = dstshdr->sh_offset + dstshdr->sh_size;
+		if (srcshdr->sh_type != SHT_NOBITS)
+			current_filesize = dstshdr->sh_offset + dstshdr->sh_size;
 	}
 
 	// FIXME: comments
