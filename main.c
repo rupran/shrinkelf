@@ -573,6 +573,11 @@ new_data:
 			current_filesize = dstshdr->sh_offset + dstshdr->sh_size;
 	}
 
+	if (elfclass == ELFCLASS32)
+		dstehdr->e_shoff = calculateCeil(current_filesize, sizeof(Elf32_Shdr));
+	else
+		dstehdr->e_shoff = calculateCeil(current_filesize, sizeof(Elf64_Shdr));
+
 	// FIXME: comments
 //-----------------------------------------------------------------------------
 // Copy program headers
