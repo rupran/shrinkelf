@@ -14,6 +14,8 @@
 
 
 #define PAGESIZE 0x1000
+#define FALSE 0x00
+#define TRUE 0xff
 
 // TODO: better error messages
 const char *FILESUFFIX = ".shrinked";
@@ -23,11 +25,19 @@ typedef struct range{
 	unsigned long long to;
 } Range;
 
+struct address_space_info{
+	int loadable;
+	unsigned long long flags;
+	unsigned long long from;
+	unsigned long long to;
+};
+
 struct chain;
 
 typedef struct chain{
 	Range data;
 	struct chain *next;
+	struct address_space_info as;
 } Chain;
 
 /*
@@ -58,13 +68,28 @@ int insert(Chain *start, Chain *elem) {
 		Range tmp;
 		tmp.from = elem->data.from;
 		tmp.to = elem->data.to;
+		struct address_space_info tmp_info;
+		tmp_info.loadable = elem->as.loadable;
+		tmp_info.flags = elem->as.flags;
+		tmp_info.from = elem->as.from;
+		tmp_info.to = elem->as.to;
 
 		elem->next = start->next;
 		start->next = elem;
+
 		elem->data.from = start->data.from;
 		elem->data.to = start->data.to;
+		elem->as.loadable = start->as.loadable;
+		elem->as.flags = start->as.flags;
+		elem->as.from = start->as.from;
+		elem->as.to = start->as.to;
+
 		start->data.from = tmp.from;
 		start->data.to = tmp.to;
+		start->as.loadable = tmp_info.loadable;
+		start->as.flags = tmp_info.flags;
+		start->as.from = tmp_info.from;
+		start->as.to = tmp_info.to;
 	}
 	else {
 		// between this two elements elem needs to be inserted
@@ -170,9 +195,12 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			else
 				tmp->data.to = srcshdr->sh_size;
 
+			// FIXME: address_space_info befüllen
+
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
+				// FIXME: as befüllen
 				free(tmp);
 			}
 			else
@@ -195,9 +223,12 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->data.from = current->data.from - srcshdr->sh_offset;
 			tmp->data.to = srcshdr->sh_size;
 
+			// FIXME: address_space_info befüllen
+
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
+				// FIXME: as befüllen
 				free(tmp);
 			}
 			else
@@ -243,6 +274,7 @@ int main(int argc, char **argv) {
 					if (tmp == NULL)
 						error(EXIT_FAILURE, errno, "Unable to allocate memory");
 					tmp->next = NULL;
+					tmp->as.loadable = FALSE;
 					char *from = NULL;
 					errno = 0;
 					tmp->data.from = strtoull(optarg, &from, 0);
