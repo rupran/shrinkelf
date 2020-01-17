@@ -29,6 +29,7 @@ typedef struct range{
 struct address_space_info{
 	int loadable;
 	unsigned long long flags;
+	unsigned long long align;
 	unsigned long long from;
 	unsigned long long to;
 };
@@ -165,18 +166,31 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		return -1;
 	}
+
+	size_t phdrnum = 0;		// number of segments in source file
+	if (elf_getphdrnum(src, &phdrnum) != 0) {
+		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		return -1;
+	}
+	errno = 0;
+	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
+	if (srcphdr == NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_srcshdr2;
+	}
+
 	Elf_Scn *srcscn = NULL;			// current section of source file
 	Chain *current = ranges;		// current range to process
 	for (size_t i = 0; i < section_number; i++) {
 		srcscn = elf_getscn(src, i);
 		if (srcscn == NULL) {
 			error(0, 0, "could not retrieve source section structure for section %lu: %s", i, elf_errmsg(-1));
-			goto err_free_srcshdr2;
+			goto err_free_srcphdr2;
 		}
 
 		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
 			error(0, 0, "could not retrieve source shdr structure for section %lu: %s", i, elf_errmsg(-1));
-			goto err_free_srcshdr2;
+			goto err_free_srcphdr2;
 		}
 		if (srcshdr->sh_type == SHT_NOBITS)
 			// no content in section => no bits to keep
@@ -188,7 +202,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
-				goto err_free_srcshdr2;
+				goto err_free_srcphdr2;
 			}
 			tmp->next = NULL;
 
@@ -202,14 +216,41 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			else
 				tmp->data.to = srcshdr->sh_size;
 
-			// FIXME: address_space_info befüllen
+			for (size_t i = 0; i < phdrnum; i++) {
+				if (gelf_getphdr(src, i, srcphdr) == NULL) {
+					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+					goto err_free_srcphdr2;
+				}
+
+				// not a loadable segment
+				if (srcphdr->p_type != PT_LOAD)
+					continue;
+
+				// loadable segment but does not load this section
+				if (srcphdr->p_offset >= srcshdr->sh_offset + srcshdr->sh_size || srcphdr->p_offset + srcphdr->p_filesz <= srcshdr->sh_offset)
+					continue;
+
+				tmp->as.loadable = TRUE;
+				tmp->as.flags = srcphdr->p_flags;
+				tmp->as.align = srcphdr->p_align;
+				if (srcphdr->p_offset <= srcshdr->sh_offset)
+					tmp->as.from = srcshdr->sh_offset - srcphdr->p_offset;
+				else
+					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				break;
+			}
 
 			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
 			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
-				// FIXME: as befüllen
+				dest[i].as.from = tmp->as.from;
+				dest[i].as.to = tmp->as.to;
+				dest[i].as.loadable = tmp->as.loadable;
+				dest[i].as.flags = tmp->as.flags;
+				dest[i].as.align = tmp->as.align;
 				free(tmp);
 			}
 			else
@@ -222,7 +263,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			Chain *tmp = malloc(sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
-				goto err_free_srcshdr2;
+				goto err_free_srcphdr2;
 			}
 			tmp->next = NULL;
 
@@ -232,14 +273,41 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->data.from = current->data.from - srcshdr->sh_offset;
 			tmp->data.to = srcshdr->sh_size;
 
-			// FIXME: address_space_info befüllen
+			for (size_t i = 0; i < phdrnum; i++) {
+				if (gelf_getphdr(src, i, srcphdr) == NULL) {
+					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+					goto err_free_srcphdr2;
+				}
+
+				// not a loadable segment
+				if (srcphdr->p_type != PT_LOAD)
+					continue;
+
+				// loadable segment but does not load this section
+				if (srcphdr->p_offset >= srcshdr->sh_offset + srcshdr->sh_size || srcphdr->p_offset + srcphdr->p_filesz <= srcshdr->sh_offset)
+					continue;
+
+				tmp->as.loadable = TRUE;
+				tmp->as.flags = srcphdr->p_flags;
+				tmp->as.align = srcphdr->p_align;
+				if (srcphdr->p_offset <= srcshdr->sh_offset)
+					tmp->as.from = srcshdr->sh_offset - srcphdr->p_offset;
+				else
+					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				break;
+			}
 
 			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
 			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
-				// FIXME: as befüllen
+				dest[i].as.from = tmp->as.from;
+				dest[i].as.to = tmp->as.to;
+				dest[i].as.loadable = tmp->as.loadable;
+				dest[i].as.flags = tmp->as.flags;
+				dest[i].as.align = tmp->as.align;
 				free(tmp);
 			}
 			else
@@ -248,6 +316,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 	}
 	return 0;
 
+err_free_srcphdr2:
+	free(srcphdr);
 err_free_srcshdr2:
 	free(srcshdr);
 	return -1;
