@@ -269,7 +269,6 @@ size_t calculateOffsetInPage(size_t addr) {
 
 // FIXME: comment
 int main(int argc, char **argv) {
-	// FIXME: free this list
 	Chain *ranges = NULL;
 
 	int opt;
@@ -286,8 +285,10 @@ int main(int argc, char **argv) {
 					// FIXME: comment
 					errno = 0;
 					Chain *tmp = malloc(sizeof(Chain));
-					if (tmp == NULL)
-						error(EXIT_FAILURE, errno, "Unable to allocate memory");
+					if (tmp == NULL) {
+						error(0, errno, "Unable to allocate memory");
+						goto err_free_ranges;
+					}
 					tmp->next = NULL;
 					tmp->as.loadable = FALSE;
 					char *from = NULL;
@@ -328,23 +329,30 @@ int main(int argc, char **argv) {
 				printf("   INPUT     Input file\n");
 				return 0;
 			default:
-				error(EXIT_FAILURE, 0, "Invalid parameter '-%c', abort (use -h for help).", opt);
+				error(0, 0, "Invalid parameter '-%c', abort (use -h for help).", opt);
+				goto err_free_ranges;
 		}
 	}
 
-	if (optind >= argc)
-		error(EXIT_FAILURE, 0, "No input file (use -h for help)");
+	if (optind >= argc) {
+		error(0, 0, "No input file (use -h for help)");
+		goto err_free_ranges;
+	}
 
 	char *filename = argv[optind];
 
 	// libelf-library won't work if you don't tell it the ELF version
-	if (elf_version(EV_CURRENT) == EV_NONE)
-		error(EXIT_FAILURE, 0, "ELF library initialization failed: %s", elf_errmsg(-1));
+	if (elf_version(EV_CURRENT) == EV_NONE) {
+		error(0, 0, "ELF library initialization failed: %s", elf_errmsg(-1));
+		goto err_free_ranges;
+	}
 
 	int srcfd;	// file descriptor of source file
 	errno = 0;
-	if ((srcfd = open(filename, O_RDONLY)) < 0)
+	if ((srcfd = open(filename, O_RDONLY)) < 0) {
 		error(EXIT_FAILURE, errno, "unable to open %s", filename);
+		goto err_free_ranges;
+	}
 	Elf *srce;	// ELF representation of source file
 	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
 		error(0, 0, "could not retrieve ELF structures from source file: %s", elf_errmsg(-1));
@@ -480,6 +488,8 @@ int main(int argc, char **argv) {
 	if (computeSectionRanges(srce, ranges, section_ranges, scnnum) != 0) {
 		goto err_free_dstshdr;
 	}
+	deleteList(ranges);
+	ranges = NULL;
 
 	// lib creates section 0 automatically
 	size_t current_filesize = 0;
@@ -707,5 +717,8 @@ err_free_srcfd:
 	errno = 0;
 	if (close(srcfd) < 0)
 		error(0, errno, "unable to close %s", filename);
+err_free_ranges:
+	if (ranges != NULL)
+		deleteList(ranges);
 	exit(EXIT_FAILURE);
 }
