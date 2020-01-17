@@ -522,6 +522,50 @@ int main(int argc, char **argv) {
 		goto err_free_dstehdr;
 	}
 
+	// FIXME: comments
+//-----------------------------------------------------------------------------
+// Copy program headers
+//-----------------------------------------------------------------------------
+	size_t phdrnum = 0;		// number of segments in source file
+	if (elf_getphdrnum(srce, &phdrnum) != 0) {
+		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		goto err_free_dstehdr;
+	}
+	errno = 0;
+	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
+	if (srcphdr == NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_dstehdr;
+	}
+
+	// FIXME: calculate new phdrnum
+	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrnum);
+	if (dstphdrs == NULL) {
+		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
+		goto err_free_srcphdr;
+	}
+	for (size_t i = 0; i < phdrnum; i++) {
+		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
+			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+			goto err_free_srcphdr;
+		}
+		dstphdrs[i].p_type = srcphdr->p_type;
+		dstphdrs[i].p_offset = srcphdr->p_offset;
+		dstphdrs[i].p_vaddr = srcphdr->p_vaddr;
+		dstphdrs[i].p_paddr = srcphdr->p_paddr;
+		dstphdrs[i].p_filesz = srcphdr->p_filesz;
+		dstphdrs[i].p_memsz = srcphdr->p_memsz;
+		dstphdrs[i].p_flags = srcphdr->p_flags;
+		dstphdrs[i].p_align = srcphdr->p_align;
+
+		/*
+		if (gelf_update_phdr(dste, i, &dstphdrs[i]) == 0) {
+			error(0, 0, "could not update ELF structures (Segments): %s", elf_errmsg(-1));
+			goto err_free_srcphdr;
+		}
+		*/
+	}
+
 	// FIXME: comments!
 //-----------------------------------------------------------------------------
 // Copy sections and section headers
@@ -529,14 +573,14 @@ int main(int argc, char **argv) {
 	size_t scnnum = 0;		// number of sections in source file
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
 		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
-		goto err_free_dstehdr;
+		goto err_free_srcphdr;
 	}
 	errno = 0;
 	// storage for current section header of source file
 	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
-		goto err_free_dstehdr;
+		goto err_free_srcphdr;
 	}
 	errno = 0;
 	// storage for current section header of new file
@@ -583,6 +627,7 @@ int main(int argc, char **argv) {
 			goto err_free_dstshdr;
 		}
 
+		// FIXME: calculate new current filesize
 		if (i == 1)
 			current_filesize = srcshdr->sh_offset;
 
@@ -703,40 +748,6 @@ new_data:
 	else
 		dstehdr->e_shoff = calculateCeil(current_filesize, sizeof(Elf64_Shdr));
 
-	// FIXME: comments
-//-----------------------------------------------------------------------------
-// Copy program headers
-//-----------------------------------------------------------------------------
-	size_t phdrnum = 0;		// number of segments in source file
-	if (elf_getphdrnum(srce, &phdrnum) != 0) {
-		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
-		goto err_free_dstshdr;
-	}
-	errno = 0;
-	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
-	if (srcphdr == NULL) {
-		error(0, errno, "ran out of memory");
-		goto err_free_dstshdr;
-	}
-	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrnum);
-	if (dstphdrs == NULL) {
-		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
-		goto err_free_srcphdr;
-	}
-	for (size_t i = 0; i < phdrnum; i++) {
-		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
-			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
-			goto err_free_srcphdr;
-		}
-		dstphdrs[i].p_type = srcphdr->p_type;
-		dstphdrs[i].p_offset = srcphdr->p_offset;
-		dstphdrs[i].p_vaddr = srcphdr->p_vaddr;
-		dstphdrs[i].p_paddr = srcphdr->p_paddr;
-		dstphdrs[i].p_filesz = srcphdr->p_filesz;
-		dstphdrs[i].p_memsz = srcphdr->p_memsz;
-		dstphdrs[i].p_flags = srcphdr->p_flags;
-		dstphdrs[i].p_align = srcphdr->p_align;
-	}
 	if (elf_update(dste, ELF_C_WRITE) == -1) {
 		error(0, 0, "could not update ELF structures: %s", elf_errmsg(-1));
 		goto err_free_srcphdr;
@@ -762,12 +773,12 @@ new_data:
 
 	return 0;
 
-err_free_srcphdr:
-	free(srcphdr);
 err_free_dstshdr:
 	free(dstshdr);
 err_free_srcshdr:
 	free(srcshdr);
+err_free_srcphdr:
+	free(srcphdr);
 err_free_dstehdr:
 	free(dstehdr);
 err_free_srcehdr:
