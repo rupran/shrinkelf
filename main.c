@@ -17,14 +17,15 @@
 #define FALSE 0x00
 #define TRUE 0xff
 
-// TODO: better error messages
 const char *FILESUFFIX = ".shrinked";
 
+// FIXME: comment
 typedef struct range{
 	unsigned long long from;
 	unsigned long long to;
 } Range;
 
+// FIXME: comment
 struct address_space_info{
 	int loadable;
 	unsigned long long flags;
@@ -34,6 +35,7 @@ struct address_space_info{
 
 struct chain;
 
+// FIXME: comment
 typedef struct chain{
 	Range data;
 	struct chain *next;
@@ -61,6 +63,7 @@ Chain *get(Chain *start, unsigned int index) {
  */
 int insert(Chain *start, Chain *elem) {
 	if (elem->data.from < start->data.from) {
+		// elem is new head
 		if (elem->data.to > start->data.from)
 			//ranges overlap
 			return -1;
@@ -125,6 +128,9 @@ void deleteList(Chain *start) {
 	}
 }
 
+/*
+ * Size of list start.
+ */
 size_t size(Chain *start) {
 	if (start->data.to == 0)
 		// no elements in list
@@ -138,6 +144,7 @@ size_t size(Chain *start) {
 	return ret;
 }
 
+// FIXME: comment
 size_t find (Chain *start, unsigned long long from) {
 	size_t ret = 0;
 	while (start->data.from < from) {
@@ -175,7 +182,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			// no content in section => no bits to keep
 			continue;
 
-		// FIXME: current gleich NULL
+		// FIXME: comment
 		while (current && current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
 			errno = 0;
 			Chain *tmp = malloc(sizeof(Chain));
@@ -197,6 +204,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 
 			// FIXME: address_space_info befüllen
 
+			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
+			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
@@ -225,6 +234,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 
 			// FIXME: address_space_info befüllen
 
+			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
+			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
@@ -242,6 +253,7 @@ err_free_srcshdr2:
 	return -1;
 }
 
+// FIXME: comment
 size_t calculateCeil(size_t value, size_t base) {
 	size_t tmp = value % base;
 	if (tmp != 0)
@@ -250,10 +262,12 @@ size_t calculateCeil(size_t value, size_t base) {
 		return value;
 }
 
+// FIXME: comment
 size_t calculateOffsetInPage(size_t addr) {
 	return addr % PAGESIZE;
 }
 
+// FIXME: comment
 int main(int argc, char **argv) {
 	// FIXME: free this list
 	Chain *ranges = NULL;
@@ -269,6 +283,7 @@ int main(int argc, char **argv) {
 				if (split == NULL) {
 					error(0, 0, "Invalid range argument '%s' - ignoring!", optarg);
 				} else {
+					// FIXME: comment
 					errno = 0;
 					Chain *tmp = malloc(sizeof(Chain));
 					if (tmp == NULL)
@@ -336,7 +351,6 @@ int main(int argc, char **argv) {
 		goto err_free_srcfd;
 	}
 
-	// TODO: maybe let user choose filename for new file
 	size_t fnamesz = strlen(filename) + strlen(FILESUFFIX) + 1;
 	if (fnamesz <= strlen(filename) || fnamesz <= strlen(FILESUFFIX)) {
 		error(0, 0, "resulting output filename too long");
@@ -364,6 +378,7 @@ int main(int argc, char **argv) {
 		goto err_free_dstfd;
 	}
 
+	// tell lib that the application will take care of the exact file layout
 	if (elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT) == 0) {
 		error(0, 0, "elf_flagelf() failed: %s.", elf_errmsg(-1));
 		goto err_free_dste;
@@ -419,8 +434,7 @@ int main(int argc, char **argv) {
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
 	dstehdr->e_flags = srcehdr->e_flags;
-	// TODO: better wording
-	// fall back for not adjusting this attributes
+	// fall back if this attributes are not adjusted later
 	dstehdr->e_shoff = srcehdr->e_shoff;
 	dstehdr->e_phoff = srcehdr->e_phoff;
 	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
@@ -456,6 +470,8 @@ int main(int argc, char **argv) {
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
 	errno = 0;
+	// FIXME: free section_ranges (normal + in case of an error)
+	// FIXME: initialize section_ranges
 	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
 	if (section_ranges == NULL) {
 		error(0, errno, "unable to allocate memory");
@@ -491,6 +507,7 @@ int main(int argc, char **argv) {
 		if (i == 1)
 			current_filesize = srcshdr->sh_offset;
 
+		// FIXME: comment
 		char *data_buffers[size(&section_ranges[i])];
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Chain *tmp = get(&section_ranges[i], j);
@@ -509,7 +526,6 @@ int main(int argc, char **argv) {
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
 			size_t index = find(&section_ranges[i], srcdata_begin);
-			// FIXME: tmp auf NULL testen
 			Chain *tmp = get(&section_ranges[i], index);
 			if (tmp == NULL) {
 				// zero elements to process
@@ -581,15 +597,13 @@ new_data:
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
+		// FIXME: comment
 		// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 		if (srcshdr->sh_addralign == 65536)
 			dstshdr->sh_addralign = 16;
 		else
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
 		dstshdr->sh_offset = calculateCeil(current_filesize, dstshdr->sh_addralign);
-		// XXX: Debug
-		//printf("current filesize: %lu, aligment: %lu, section offset (old): %lu, section offset (new): %lu\n", current_filesize, dstshdr->sh_addralign, srcshdr->sh_offset, dstshdr->sh_offset);
-		// FIXME:
 		if (srcshdr->sh_type == SHT_NOBITS)
 			dstshdr->sh_size = srcshdr->sh_size;
 		else
