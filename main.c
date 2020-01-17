@@ -473,7 +473,6 @@ int main(int argc, char **argv) {
 	GElf_Shdr *dstshdr = malloc(sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
 		error(0, errno, "unable to allocate memory for new shdr structure");
-		free(srcshdr);
 		goto err_free_srcshdr;
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
