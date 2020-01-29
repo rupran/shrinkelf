@@ -162,7 +162,7 @@ size_t find (Chain *start, unsigned long long from) {
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
 	// storage for current section header of source file
 	errno = 0;
-	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
+	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		return -1;
@@ -174,7 +174,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 		return -1;
 	}
 	errno = 0;
-	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
+	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
 		goto err_free_srcshdr2;
@@ -200,7 +200,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 		// FIXME: comment
 		while (current && current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
 			errno = 0;
-			Chain *tmp = malloc(sizeof(Chain));
+			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
 				goto err_free_srcphdr2;
@@ -262,7 +262,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 
 		if (current && current->data.from < srcshdr->sh_offset + srcshdr->sh_size) {
 			errno = 0;
-			Chain *tmp = malloc(sizeof(Chain));
+			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
 				error(0, errno, "unable to allocate memory");
 				goto err_free_srcphdr2;
@@ -404,7 +404,7 @@ int main(int argc, char **argv) {
 				} else {
 					// FIXME: comment
 					errno = 0;
-					Chain *tmp = malloc(sizeof(Chain));
+					Chain *tmp = calloc(1, sizeof(Chain));
 					if (tmp == NULL) {
 						error(0, errno, "Unable to allocate memory");
 						goto err_free_ranges;
@@ -486,7 +486,7 @@ int main(int argc, char **argv) {
 	}
 	errno = 0;
 	// filename of new file
-	char *dstfname = malloc(fnamesz);
+	char *dstfname = calloc(fnamesz, sizeof(char));
 	if(dstfname == NULL) {
 		error(0, errno, "unable to allocate memory for new filename");
 		goto err_free_srce;
@@ -525,7 +525,7 @@ int main(int argc, char **argv) {
 	}
 	errno = 0;
 	// executable header of source file
-	GElf_Ehdr *srcehdr = malloc(sizeof(GElf_Ehdr));
+	GElf_Ehdr *srcehdr = calloc(1, sizeof(GElf_Ehdr));
 	if(srcehdr == NULL) {
 		error(0, errno, "unable to allocate memory for executable header of source file");
 		goto err_free_dste;
@@ -536,7 +536,7 @@ int main(int argc, char **argv) {
 	}
 	errno = 0;
 	// executable header of new file
-	GElf_Ehdr *dstehdr = malloc(sizeof(GElf_Ehdr));
+	GElf_Ehdr *dstehdr = calloc(1, sizeof(GElf_Ehdr));
 	if(dstehdr == NULL) {
 		error(0, errno, "unable to allocate memory for executable header of new file");
 		goto err_free_srcehdr;
@@ -601,7 +601,7 @@ int main(int argc, char **argv) {
 		goto err_free_dstehdr;
 	}
 	errno = 0;
-	GElf_Phdr *srcphdr = malloc(sizeof(GElf_Phdr));
+	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
 		goto err_free_dstehdr;
@@ -695,14 +695,14 @@ int main(int argc, char **argv) {
 //-----------------------------------------------------------------------------
 	errno = 0;
 	// storage for current section header of source file
-	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
+	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		goto err_free_srcphdr;
 	}
 	errno = 0;
 	// storage for current section header of new file
-	GElf_Shdr *dstshdr = malloc(sizeof(GElf_Shdr));
+	GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
 		error(0, errno, "unable to allocate memory for new shdr structure");
 		goto err_free_srcshdr;
