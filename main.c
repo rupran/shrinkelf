@@ -158,6 +158,7 @@ size_t find (Chain *start, unsigned long long from) {
 /*
  * compute the ranges to keep per section and store them in array dest
  */
+// FIXME: calculate as.from and as.to dependent on data.from and data.to
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
 	// storage for current section header of source file
 	errno = 0;
@@ -233,8 +234,9 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
+				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
-					tmp->as.from = srcshdr->sh_offset - srcphdr->p_offset;
+					tmp->as.from = srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
 				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
@@ -290,6 +292,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
+				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcshdr->sh_offset - srcphdr->p_offset;
 				else
@@ -337,6 +340,53 @@ size_t calculateOffsetInPage(size_t addr) {
 	return addr % PAGESIZE;
 }
 
+/*
+ * Counts LOAD program headers.
+ * Returns -1 in case of an error.
+ */
+int countLOADs(Elf *elf) {
+	int count = 0;
+
+	size_t phdrnum = 0;		// number of segments in file
+	if (elf_getphdrnum(elf, &phdrnum) != 0) {
+		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		return -1;
+	}
+	errno = 0;
+	GElf_Phdr *phdr = calloc(1, sizeof(GElf_Phdr));
+	if (phdr == NULL) {
+		error(0, errno, "ran out of memory");
+		return -1;
+	}
+	for (size_t i = 0; i < phdrnum; i++) {
+		if (gelf_getphdr(elf, i, phdr) == NULL) {
+			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+			return -1;
+		}
+
+		if (phdr->p_type == PT_LOAD) {
+			count++;
+		}
+	}
+	return count;
+}
+
+/*
+ * Counts loadable ranges headers.
+ */
+int countLoadableRanges(Chain *ranges, size_t size) {
+	int count = 0;
+
+	for (size_t i = 0; i < size; i++) {
+		Chain *tmp = &ranges[i];
+		while (tmp) {
+			if (tmp->as.loadable)
+				count++;
+			tmp = tmp->next;
+		}
+	}
+	return count;
+}
 // FIXME: comment
 int main(int argc, char **argv) {
 	Chain *ranges = NULL;
@@ -526,6 +576,25 @@ int main(int argc, char **argv) {
 //-----------------------------------------------------------------------------
 // Copy program headers
 //-----------------------------------------------------------------------------
+	size_t scnnum = 0;		// number of sections in source file
+	if (elf_getshdrnum(srce, &scnnum) != 0) {
+		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
+		goto err_free_dstehdr;
+	}
+	errno = 0;
+	// FIXME: free section_ranges (normal + in case of an error)
+	// FIXME: initialize section_ranges
+	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
+	if (section_ranges == NULL) {
+		error(0, errno, "unable to allocate memory");
+		goto err_free_dstehdr;
+	}
+	if (computeSectionRanges(srce, ranges, section_ranges, scnnum) != 0) {
+		goto err_free_dstehdr;
+	}
+	deleteList(ranges);
+	ranges = NULL;
+
 	size_t phdrnum = 0;		// number of segments in source file
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
@@ -538,25 +607,79 @@ int main(int argc, char **argv) {
 		goto err_free_dstehdr;
 	}
 
-	// FIXME: calculate new phdrnum
-	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrnum);
+	int loads = countLOADs(srce);
+	if (loads == -1)
+		goto err_free_srcphdr;
+	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
+	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 1;
+	GElf_Phdr *dstphdrs = gelf_newphdr(dste, new_phdrnum);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
 		goto err_free_srcphdr;
 	}
+
+	size_t new_index = 0;
+	int first_load = FALSE;
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 			goto err_free_srcphdr;
 		}
-		dstphdrs[i].p_type = srcphdr->p_type;
-		dstphdrs[i].p_offset = srcphdr->p_offset;
-		dstphdrs[i].p_vaddr = srcphdr->p_vaddr;
-		dstphdrs[i].p_paddr = srcphdr->p_paddr;
-		dstphdrs[i].p_filesz = srcphdr->p_filesz;
-		dstphdrs[i].p_memsz = srcphdr->p_memsz;
-		dstphdrs[i].p_flags = srcphdr->p_flags;
-		dstphdrs[i].p_align = srcphdr->p_align;
+
+		if (srcphdr->p_type != PT_LOAD) {
+			dstphdrs[new_index].p_type = srcphdr->p_type;
+			dstphdrs[new_index].p_offset = srcphdr->p_offset;
+			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
+			dstphdrs[new_index].p_paddr = srcphdr->p_paddr;
+			dstphdrs[new_index].p_filesz = srcphdr->p_filesz;
+			dstphdrs[new_index].p_memsz = srcphdr->p_memsz;
+			dstphdrs[new_index].p_flags = srcphdr->p_flags;
+			dstphdrs[new_index].p_align = srcphdr->p_align;
+			new_index++;
+		}
+		else if (first_load)
+			continue;
+		else {
+			first_load = TRUE;
+
+			// FIXME: LOAD für EHDR + PHDR
+			dstphdrs[new_index].p_type = srcphdr->p_type;
+			dstphdrs[new_index].p_offset = srcphdr->p_offset;
+			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
+			dstphdrs[new_index].p_paddr = srcphdr->p_paddr;
+			if (elfclass == ELFCLASS32) {
+				dstphdrs[new_index].p_filesz = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_memsz = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
+			}
+			else {
+				dstphdrs[new_index].p_filesz = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
+			}
+			dstphdrs[new_index].p_flags = srcphdr->p_flags;
+			dstphdrs[new_index].p_align = srcphdr->p_align;
+			new_index++;
+
+			// FIXME: new LOAD entries
+			for (size_t i = 0; i < scnnum; i++) {
+				Chain *tmp = &section_ranges[i];
+				while (tmp) {
+					if (tmp->as.loadable) {
+						dstphdrs[new_index].p_type = PT_LOAD;
+						// FIXME: offset in Datei berechnen
+						dstphdrs[new_index].p_offset = tmp->data.from;
+						dstphdrs[new_index].p_vaddr = tmp->as.from;
+						dstphdrs[new_index].p_paddr = tmp->as.from;
+						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
+						dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
+						dstphdrs[new_index].p_flags = tmp->as.flags;
+						dstphdrs[new_index].p_align = tmp->as.align;
+
+						new_index++;
+					}
+					tmp = tmp->next;
+				}
+			}
+		}
 
 		/*
 		if (gelf_update_phdr(dste, i, &dstphdrs[i]) == 0) {
@@ -570,11 +693,6 @@ int main(int argc, char **argv) {
 //-----------------------------------------------------------------------------
 // Copy sections and section headers
 //-----------------------------------------------------------------------------
-	size_t scnnum = 0;		// number of sections in source file
-	if (elf_getshdrnum(srce, &scnnum) != 0) {
-		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
-		goto err_free_srcphdr;
-	}
 	errno = 0;
 	// storage for current section header of source file
 	GElf_Shdr *srcshdr = malloc(sizeof(GElf_Shdr));
@@ -590,20 +708,6 @@ int main(int argc, char **argv) {
 		goto err_free_srcshdr;
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
-	errno = 0;
-	// FIXME: free section_ranges (normal + in case of an error)
-	// FIXME: initialize section_ranges
-	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
-	if (section_ranges == NULL) {
-		error(0, errno, "unable to allocate memory");
-		goto err_free_dstshdr;
-	}
-	if (computeSectionRanges(srce, ranges, section_ranges, scnnum) != 0) {
-		goto err_free_dstshdr;
-	}
-	deleteList(ranges);
-	ranges = NULL;
-
 	// lib creates section 0 automatically
 	size_t current_filesize = 0;
 	for (size_t i = 1; i < scnnum; i++) {
@@ -628,8 +732,14 @@ int main(int argc, char **argv) {
 		}
 
 		// FIXME: calculate new current filesize
-		if (i == 1)
-			current_filesize = srcshdr->sh_offset;
+		if (i == 1) {
+			if (elfclass == ELFCLASS32) {
+				current_filesize = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
+			}
+			else {
+				current_filesize = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
+			}
+		}
 
 		// FIXME: comment
 		char *data_buffers[size(&section_ranges[i])];
