@@ -30,6 +30,7 @@ struct address_space_info{
 	int loadable;
 	unsigned long long flags;
 	unsigned long long align;
+	unsigned long long section_offset;
 	unsigned long long from;
 	unsigned long long to;
 };
@@ -75,6 +76,8 @@ int insert(Chain *start, Chain *elem) {
 		struct address_space_info tmp_info;
 		tmp_info.loadable = elem->as.loadable;
 		tmp_info.flags = elem->as.flags;
+		tmp_info.align = elem->as.align;
+		tmp_info.section_offset = elem->as.section_offset;
 		tmp_info.from = elem->as.from;
 		tmp_info.to = elem->as.to;
 
@@ -85,6 +88,8 @@ int insert(Chain *start, Chain *elem) {
 		elem->data.to = start->data.to;
 		elem->as.loadable = start->as.loadable;
 		elem->as.flags = start->as.flags;
+		elem->as.align = start->as.align;
+		elem->as.section_offset = start->as.section_offset;
 		elem->as.from = start->as.from;
 		elem->as.to = start->as.to;
 
@@ -92,6 +97,8 @@ int insert(Chain *start, Chain *elem) {
 		start->data.to = tmp.to;
 		start->as.loadable = tmp_info.loadable;
 		start->as.flags = tmp_info.flags;
+		start->as.align = tmp_info.align;
+		start->as.section_offset = tmp_info.section_offset;
 		start->as.from = tmp_info.from;
 		start->as.to = tmp_info.to;
 	}
@@ -234,9 +241,10 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
+				tmp->as.section_offset = srcshdr->sh_offset;
 				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
-					tmp->as.from = srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
+					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
 				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
@@ -253,6 +261,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				dest[i].as.loadable = tmp->as.loadable;
 				dest[i].as.flags = tmp->as.flags;
 				dest[i].as.align = tmp->as.align;
+				dest[i].as.section_offset = tmp->as.section_offset;
 				free(tmp);
 			}
 			else
@@ -292,9 +301,10 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
+				tmp->as.section_offset = srcshdr->sh_offset;
 				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
-					tmp->as.from = srcshdr->sh_offset - srcphdr->p_offset;
+					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
 				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
@@ -311,6 +321,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				dest[i].as.loadable = tmp->as.loadable;
 				dest[i].as.flags = tmp->as.flags;
 				dest[i].as.align = tmp->as.align;
+				dest[i].as.section_offset = tmp->as.section_offset;
 				free(tmp);
 			}
 			else
@@ -612,6 +623,13 @@ int main(int argc, char **argv) {
 		goto err_free_srcphdr;
 	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
 	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 1;
+	size_t phdr_offset = new_phdrnum - phdrnum;
+	if (elfclass == ELFCLASS32) {
+		phdr_offset *= sizeof(Elf32_Phdr);
+	}
+	else {
+		phdr_offset *= sizeof(Elf64_Phdr);
+	}
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, new_phdrnum);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
@@ -628,7 +646,10 @@ int main(int argc, char **argv) {
 
 		if (srcphdr->p_type != PT_LOAD) {
 			dstphdrs[new_index].p_type = srcphdr->p_type;
-			dstphdrs[new_index].p_offset = srcphdr->p_offset;
+			if (srcphdr->p_type == PT_PHDR)
+				dstphdrs[new_index].p_offset = srcphdr->p_offset;
+			else
+				dstphdrs[new_index].p_offset = srcphdr->p_offset + phdr_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
 			dstphdrs[new_index].p_paddr = srcphdr->p_paddr;
 			dstphdrs[new_index].p_filesz = srcphdr->p_filesz;
@@ -666,7 +687,7 @@ int main(int argc, char **argv) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
 						// FIXME: offset in Datei berechnen
-						dstphdrs[new_index].p_offset = tmp->data.from;
+						dstphdrs[new_index].p_offset = tmp->as.section_offset + tmp->data.from + phdr_offset;
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
