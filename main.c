@@ -23,7 +23,6 @@ const char *FILESUFFIX = ".shrinked";
 typedef struct range{
 	unsigned long long from;
 	unsigned long long to;
-	unsigned long long size;
 } Range;
 
 // FIXME: comment
@@ -75,7 +74,6 @@ int insert(Chain *start, Chain *elem) {
 		Range tmp;
 		tmp.from = elem->data.from;
 		tmp.to = elem->data.to;
-		tmp.size = elem->data.size;
 		struct address_space_info tmp_info;
 		tmp_info.loadable = elem->as.loadable;
 		tmp_info.flags = elem->as.flags;
@@ -90,7 +88,6 @@ int insert(Chain *start, Chain *elem) {
 
 		elem->data.from = start->data.from;
 		elem->data.to = start->data.to;
-		elem->data.size = start->data.size;
 		elem->as.loadable = start->as.loadable;
 		elem->as.flags = start->as.flags;
 		elem->as.align = start->as.align;
@@ -101,7 +98,6 @@ int insert(Chain *start, Chain *elem) {
 
 		start->data.from = tmp.from;
 		start->data.to = tmp.to;
-		start->data.size = tmp.size;
 		start->as.loadable = tmp_info.loadable;
 		start->as.flags = tmp_info.flags;
 		start->as.align = tmp_info.align;
@@ -219,7 +215,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			tmp->next = NULL;
 			tmp->data.from = 0;
 			tmp->data.to = 0;
-			tmp->data.size = srcshdr->sh_size;
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
 					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -249,7 +244,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				break;
 			}
 
@@ -258,7 +253,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
-				dest[i].data.size = tmp->data.size;
 				dest[i].as.from = tmp->as.from;
 				dest[i].as.to = tmp->as.to;
 				dest[i].as.loadable = tmp->as.loadable;
@@ -292,7 +286,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->data.to = current->data.to - srcshdr->sh_offset;
 			else
 				tmp->data.to = srcshdr->sh_size;
-			tmp->data.size = tmp->data.to - tmp->data.from;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -331,7 +324,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
-				dest[i].data.size = tmp->data.size;
 				dest[i].as.from = tmp->as.from;
 				dest[i].as.to = tmp->as.to;
 				dest[i].as.loadable = tmp->as.loadable;
@@ -360,7 +352,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			else
 				tmp->data.from = current->data.from - srcshdr->sh_offset;
 			tmp->data.to = srcshdr->sh_size;
-			tmp->data.size = tmp->data.to - tmp->data.from;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -399,7 +390,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
-				dest[i].data.size = tmp->data.size;
 				dest[i].as.from = tmp->as.from;
 				dest[i].as.to = tmp->as.to;
 				dest[i].as.loadable = tmp->as.loadable;
@@ -526,7 +516,6 @@ int main(int argc, char **argv) {
 						if (tmp->data.to <= tmp->data.from) {
 							error(0, 0, "Invalid range '%s' - ignoring!", optarg);
 						} else {
-							tmp->data.size = tmp->data.to - tmp->data.from;
 							if (ranges == NULL)
 								ranges = tmp;
 							else
@@ -764,7 +753,8 @@ int main(int argc, char **argv) {
 				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
 			}
 			dstphdrs[new_index].p_flags = srcphdr->p_flags;
-			dstphdrs[new_index].p_align = srcphdr->p_align;
+			// TODO: intelligentere Alignmentberechnung
+			dstphdrs[new_index].p_align = PAGESIZE;
 
 			segments_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 			new_index++;
@@ -780,10 +770,11 @@ int main(int argc, char **argv) {
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
-						// dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
-						dstphdrs[new_index].p_memsz = tmp->data.size;
+						dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
 						dstphdrs[new_index].p_flags = tmp->as.flags;
-						dstphdrs[new_index].p_align = tmp->as.align;
+						// dstphdrs[new_index].p_align = tmp->as.align;
+						// TODO: intelligentere Alignmentberechnung
+						dstphdrs[new_index].p_align = PAGESIZE;
 
 						segments_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 						new_index++;
