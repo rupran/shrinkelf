@@ -209,67 +209,9 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			error(0, 0, "could not retrieve source shdr structure for section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_srcphdr2;
 		}
-		if (srcshdr->sh_type == SHT_NOBITS) {
-			// no content in section => no bits to keep
-			errno = 0;
-			Chain *tmp = calloc(1, sizeof(Chain));
-			if (tmp == NULL) {
-				error(0, errno, "unable to allocate memory");
-				goto err_free_srcphdr2;
-			}
-			tmp->next = NULL;
-			tmp->data.from = 0;
-			tmp->data.to = 0;
-			for (size_t j = 0; j < phdrnum; j++) {
-				if (gelf_getphdr(src, j, srcphdr) == NULL) {
-					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
-					goto err_free_srcphdr2;
-				}
-
-				// not a loadable segment
-				if (srcphdr->p_type != PT_LOAD)
-					continue;
-
-				// loadable segment but does not load this section
-				if (srcphdr->p_offset > srcshdr->sh_offset || srcphdr->p_offset + srcphdr->p_filesz < srcshdr->sh_offset)
-					continue;
-
-				tmp->as.loadable = TRUE;
-				tmp->as.flags = srcphdr->p_flags;
-				tmp->as.align = srcphdr->p_align;
-				tmp->as.section_offset = srcshdr->sh_offset;
-				// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-				if (srcshdr->sh_addralign != 65536)
-					tmp->as.section_align = srcshdr->sh_addralign;
-				else
-					tmp->as.section_align = 16;
-				if (srcphdr->p_offset <= srcshdr->sh_offset)
-					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
-				else
-					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				tmp->as.to = tmp->as.from + srcshdr->sh_size;
-				break;
-			}
-
-			if (dest[i].data.to == 0) {
-				dest[i].data.from = tmp->data.from;
-				dest[i].data.to = tmp->data.to;
-				dest[i].as.from = tmp->as.from;
-				dest[i].as.to = tmp->as.to;
-				dest[i].as.loadable = tmp->as.loadable;
-				dest[i].as.flags = tmp->as.flags;
-				dest[i].as.align = tmp->as.align;
-				dest[i].as.section_offset = tmp->as.section_offset;
-				dest[i].as.section_align = tmp->as.section_align;
-				free(tmp);
-			}
-			else
-				insert(&dest[i], tmp);
-			continue;
-		}
 
 		// FIXME: comment
-		while (current && current->data.to <= srcshdr->sh_offset + srcshdr->sh_size) {
+		while (current && current->data.to <= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
@@ -278,15 +220,25 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 			tmp->next = NULL;
 
-			if (current->data.from < srcshdr->sh_offset)
+			if (srcshdr->sh_type == SHT_NOBITS) {
 				tmp->data.from = 0;
-			else
-				tmp->data.from = current->data.from - srcshdr->sh_offset;
+				tmp->data.to = 0;
+			}
+			else {
+				if (current->data.from < srcshdr->sh_offset)
+					tmp->data.from = 0;
+				else
+					tmp->data.from = current->data.from - srcshdr->sh_offset;
 
-			if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size)
-				tmp->data.to = current->data.to - srcshdr->sh_offset;
+				if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size)
+					tmp->data.to = current->data.to - srcshdr->sh_offset;
+				else
+					tmp->data.to = srcshdr->sh_size;
+			}
+			if (srcshdr->sh_addralign != 65536)
+				tmp->as.section_align = srcshdr->sh_addralign;
 			else
-				tmp->data.to = srcshdr->sh_size;
+				tmp->as.section_align = 16;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -299,7 +251,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					continue;
 
 				// loadable segment but does not load this section
-				if (srcphdr->p_offset >= srcshdr->sh_offset + srcshdr->sh_size || srcphdr->p_offset + srcphdr->p_filesz <= srcshdr->sh_offset)
+				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset)
 					continue;
 
 				tmp->as.loadable = TRUE;
@@ -307,15 +259,16 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.align = srcphdr->p_align;
 				tmp->as.section_offset = srcshdr->sh_offset;
 				// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-				if (srcshdr->sh_addralign != 65536)
-					tmp->as.section_align = srcshdr->sh_addralign;
-				else
-					tmp->as.section_align = 16;
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				if (srcshdr->sh_type == SHT_NOBITS) {
+					tmp->as.to = tmp->as.from + srcshdr->sh_size;
+				}
+				else {
+					tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				}
 				break;
 			}
 
@@ -336,7 +289,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			current = current->next;
 		}
 
-		if (current && current->data.from < srcshdr->sh_offset + srcshdr->sh_size) {
+		if (current && current->data.from < srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
@@ -345,11 +298,21 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 			tmp->next = NULL;
 
-			if (current->data.from < srcshdr->sh_offset)
+			if (srcshdr->sh_type == SHT_NOBITS) {
 				tmp->data.from = 0;
+				tmp->data.to = 0;
+			}
+			else {
+				if (current->data.from < srcshdr->sh_offset)
+					tmp->data.from = 0;
+				else
+					tmp->data.from = current->data.from - srcshdr->sh_offset;
+				tmp->data.to = srcshdr->sh_size;
+			}
+			if (srcshdr->sh_addralign != 65536)
+				tmp->as.section_align = srcshdr->sh_addralign;
 			else
-				tmp->data.from = current->data.from - srcshdr->sh_offset;
-			tmp->data.to = srcshdr->sh_size;
+				tmp->as.section_align = 16;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -362,7 +325,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					continue;
 
 				// loadable segment but does not load this section
-				if (srcphdr->p_offset >= srcshdr->sh_offset + srcshdr->sh_size || srcphdr->p_offset + srcphdr->p_filesz <= srcshdr->sh_offset)
+				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset)
 					continue;
 
 				tmp->as.loadable = TRUE;
@@ -370,15 +333,16 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.align = srcphdr->p_align;
 				tmp->as.section_offset = srcshdr->sh_offset;
 				// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-				if (srcshdr->sh_addralign != 65536)
-					tmp->as.section_align = srcshdr->sh_addralign;
-				else
-					tmp->as.section_align = 16;
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				if (srcshdr->sh_type == SHT_NOBITS) {
+					tmp->as.to = tmp->as.from + srcshdr->sh_size;
+				}
+				else {
+					tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
+				}
 				break;
 			}
 
@@ -854,6 +818,10 @@ int main(int argc, char **argv) {
 		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
+			if (srcdata->d_buf == NULL) {
+				// section is NOBITS section => no data to copy
+				continue;
+			}
 			// FIXME: databuffer contains only a part of range to keep
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
@@ -901,17 +869,14 @@ new_data:
 			Chain *tmp = get(&section_ranges[i], j);
 			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
 
-			// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-			if (srcdata->d_align != 65536 && (current_offset + off - srcshdr->sh_offset) % srcdata->d_align != 0) {
-				error(0, 0, "in section %lu: range to keep is misaligned by %lu bytes (offset in section: %lu, aligment: %lu)", i, (current_offset + off - srcshdr->sh_offset) % srcdata->d_align, current_offset + off - srcshdr->sh_offset, srcdata->d_align);
+			if ((current_offset + off - srcshdr->sh_offset) % tmp->as.section_align != 0) {
+				error(0, 0, "in section %lu: range to keep is misaligned by %llu bytes (offset in section: %lu, aligment: %llu)", i, (current_offset + off - srcshdr->sh_offset) % tmp->as.section_align, current_offset + off - srcshdr->sh_offset, tmp->as.section_align);
 				goto err_free_dstshdr;
 			}
-			// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-			if (srcdata->d_align == 65536)
-				dstdata->d_align = 16;
-			else
-				dstdata->d_align = srcdata->d_align;
+			dstdata->d_align = tmp->as.section_align;
+			// FIXME: srcdata nicht verwenden
 			dstdata->d_type = srcdata->d_type;
+			// FIXME: srcdata nicht verwenden
 			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = data_buffers[j];
 			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
