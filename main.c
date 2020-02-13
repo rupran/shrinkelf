@@ -19,7 +19,9 @@
 
 const char *FILESUFFIX = ".shrinked";
 
-// FIXME: comment
+/*
+ * Contains start and end of range to keep based on addresses in the file.
+ */
 typedef struct range{
 	unsigned long long from;
 	unsigned long long to;
@@ -169,30 +171,33 @@ size_t find (Chain *start, unsigned long long from) {
 /*
  * compute the ranges to keep per section and store them in array dest
  */
-// FIXME: calculate as.from and as.to dependent on data.from and data.to
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
-	// storage for current section header of source file
 	errno = 0;
+	// storage for current section header of source file
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		return -1;
 	}
 
-	size_t phdrnum = 0;		// number of segments in source file
+	// number of segments in source file
+	size_t phdrnum = 0;
 	if (elf_getphdrnum(src, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		return -1;
 	}
 	errno = 0;
+	// storage for current program header of source file
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
 		goto err_free_srcshdr2;
 	}
 
-	Elf_Scn *srcscn = NULL;			// current section of source file
-	Chain *current = ranges;		// current range to process
+	// current section of source file
+	Elf_Scn *srcscn = NULL;
+	// current range to process
+	Chain *current = ranges;
 	for (size_t i = 0; i < section_number; i++) {
 		srcscn = elf_getscn(src, i);
 		if (srcscn == NULL) {
@@ -238,8 +243,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					tmp->as.section_align = srcshdr->sh_addralign;
 				else
 					tmp->as.section_align = 16;
-				// FIXME: calculate as.from and as.to dependent on data.from and data.to
-				// FIXME: Semantik von as.from und as.to klären und Werte anpassen
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -248,8 +251,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				break;
 			}
 
-			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
-			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
@@ -310,7 +311,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					tmp->as.section_align = srcshdr->sh_addralign;
 				else
 					tmp->as.section_align = 16;
-				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -319,8 +319,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				break;
 			}
 
-			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
-			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
@@ -376,7 +374,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					tmp->as.section_align = srcshdr->sh_addralign;
 				else
 					tmp->as.section_align = 16;
-				// FIXME: calculate as.from and as.to dependent on data.from and data.to
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -385,8 +382,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				break;
 			}
 
-			// TODO: warum teste ich dest[i].data.to auf 0? Um festzustellen,
-			// ob die Liste leer ist?
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
