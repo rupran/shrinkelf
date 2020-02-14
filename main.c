@@ -184,7 +184,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 	size_t phdrnum = 0;
 	if (elf_getphdrnum(src, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
-		return -1;
+		goto err_free_srcshdr2;
 	}
 	errno = 0;
 	// storage for current program header of source file
@@ -362,6 +362,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				insert(&dest[i], tmp);
 		}
 	}
+	free(srcphdr);
+	free(srcshdr);
 	return 0;
 
 err_free_srcphdr2:
@@ -406,6 +408,7 @@ int countLOADs(Elf *elf) {
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(elf, i, phdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+			free(phdr);
 			return -1;
 		}
 
@@ -413,6 +416,7 @@ int countLOADs(Elf *elf) {
 			count++;
 		}
 	}
+	free(phdr);
 	return count;
 }
 
@@ -581,11 +585,7 @@ int main(int argc, char **argv) {
 	}
 	errno = 0;
 	// executable header of new file
-	GElf_Ehdr *dstehdr = calloc(1, sizeof(GElf_Ehdr));
-	if(dstehdr == NULL) {
-		error(0, errno, "unable to allocate memory for executable header of new file");
-		goto err_free_srcehdr;
-	}
+	GElf_Ehdr *dstehdr;
 	/*
 	 * gelf_newehdr sets automatically the magic numbers of an ELF header,
 	 * the EI_CLASS byte according to elfclass, the EI_VERSION byte and
@@ -827,6 +827,7 @@ int main(int argc, char **argv) {
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
 			size_t index = find(&section_ranges[i], srcdata_begin);
 			Chain *tmp = get(&section_ranges[i], index);
+			// XXX: Debug
 			if (tmp == NULL) {
 				// zero elements to process
 				printf("Zero elements to process");
@@ -928,9 +929,14 @@ new_data:
 
 	// tidy up
 	free(srcphdr);
+	for (size_t i = 0; i < scnnum; i++) {
+		if (section_ranges[i].next) {
+			deleteList(section_ranges[i].next);
+		}
+	}
+	free(section_ranges);
 	free(dstshdr);
 	free(srcshdr);
-	free(dstehdr);
 	free(srcehdr);
 	elf_end(dste);
 	errno = 0;
