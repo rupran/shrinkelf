@@ -709,6 +709,7 @@ int main(int argc, char **argv) {
 			continue;
 		else {
 			first_load = TRUE;
+			size_t current_size = 0;
 
 			// FIXME: LOAD für EHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
@@ -723,10 +724,11 @@ int main(int argc, char **argv) {
 				dstphdrs[new_index].p_filesz = sizeof(Elf64_Ehdr);
 				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr);
 			}
-			dstphdrs[new_index].p_flags = srcphdr->p_flags;
+			dstphdrs[new_index].p_flags = PF_X | PF_R;
 			// TODO: intelligentere Alignmentberechnung
 			dstphdrs[new_index].p_align = PAGESIZE;
 
+			current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 			new_index++;
 
 			for (size_t i = 0; i < scnnum; i++) {
@@ -735,7 +737,7 @@ int main(int argc, char **argv) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
 						// FIXME: offset in Datei berechnen
-						dstphdrs[new_index].p_offset = tmp->as.section_offset + tmp->data.from;
+						dstphdrs[new_index].p_offset = calculateOffset(tmp->as.section_offset + tmp->data.from, current_size);
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
@@ -745,37 +747,36 @@ int main(int argc, char **argv) {
 						// TODO: intelligentere Alignmentberechnung
 						dstphdrs[new_index].p_align = PAGESIZE;
 
+						current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 						new_index++;
 					}
 					tmp = tmp->next;
 				}
 			}
-			/*
 			// XXX: LOAD für PHDR - DEBUG
-			// FIXME: p_vaddr & p_paddr fixen
 			dstphdrs[new_index].p_type = PT_LOAD;
-			dstphdrs[new_index].p_offset = 138000;
-			dstehdr->e_phoff = 138000;
-			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf32_Ehdr);
-			dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf32_Ehdr);
+			dstehdr->e_phoff = calculateOffset(0, current_size);
+			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
 			if (elfclass == ELFCLASS32) {
+				// FIXME: p_vaddr & p_paddr fixen
+				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf32_Ehdr);
+				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf32_Ehdr);
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf32_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf32_Phdr);
 			}
 			else {
+				// FIXME: p_vaddr & p_paddr fixen
+				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf64_Ehdr);
+				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf64_Ehdr);
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf64_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
 			}
-			dstphdrs[new_index].p_flags = srcphdr->p_flags;
+			dstphdrs[new_index].p_flags = PF_X | PF_R;
 			// TODO: intelligentere Alignmentberechnung
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			new_index++;
-			*/
 		}
-
-		// XXX: Debug
-		dstehdr->e_phoff = 445000;
 
 		/*
 		if (gelf_update_phdr(dste, i, &dstphdrs[i]) == 0) {
