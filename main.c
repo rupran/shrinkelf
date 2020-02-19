@@ -436,6 +436,29 @@ int countLoadableRanges(Chain *ranges, size_t size) {
 	}
 	return count;
 }
+
+/*
+ * Calculates offset of a structure in its containing structure (section/file or
+ * data block/section). priorOffset is the offset of that structure in the original file,
+ * occupiedSpace points to the first free byte in the containing structure where that structure
+ * is appended.
+ * Contraint: new offset needs to be equal prior offset modulo page size because LOAD segments
+ * require that p_offset (offset in file) is equal p_vaddr (address in virtual address space)
+ * modulo page size.
+ */
+size_t calculateOffset(size_t priorOffset, size_t occupiedSpace) {
+	size_t priorPageOffset = calculateOffsetInPage(priorOffset);
+	size_t occupiedPageOffset = calculateOffsetInPage(occupiedSpace);
+	if (occupiedPageOffset <= priorPageOffset) {
+		return occupiedSpace - occupiedPageOffset + priorPageOffset;
+	}
+	else {
+		return occupiedSpace - occupiedPageOffset + priorPageOffset + PAGESIZE;
+	}
+}
+
+
+
 // FIXME: comment
 int main(int argc, char **argv) {
 	Chain *ranges = NULL;
@@ -656,14 +679,7 @@ int main(int argc, char **argv) {
 	if (loads == -1)
 		goto err_free_srcphdr;
 	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
-	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 1;
-	size_t phdr_offset = new_phdrnum - phdrnum;
-	if (elfclass == ELFCLASS32) {
-		phdr_offset *= sizeof(Elf32_Phdr);
-	}
-	else {
-		phdr_offset *= sizeof(Elf64_Phdr);
-	}
+	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 2;
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, new_phdrnum);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
@@ -672,7 +688,6 @@ int main(int argc, char **argv) {
 
 	size_t new_index = 0;
 	int first_load = FALSE;
-	size_t segments_size = 0;		// size of loadable segments; increased with adding a loadable segment
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -681,10 +696,7 @@ int main(int argc, char **argv) {
 
 		if (srcphdr->p_type != PT_LOAD) {
 			dstphdrs[new_index].p_type = srcphdr->p_type;
-			if (srcphdr->p_type == PT_PHDR)
-				dstphdrs[new_index].p_offset = srcphdr->p_offset;
-			else
-				dstphdrs[new_index].p_offset = srcphdr->p_offset + phdr_offset;
+			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
 			dstphdrs[new_index].p_paddr = srcphdr->p_paddr;
 			dstphdrs[new_index].p_filesz = srcphdr->p_filesz;
@@ -698,34 +710,32 @@ int main(int argc, char **argv) {
 		else {
 			first_load = TRUE;
 
-			// FIXME: LOAD für EHDR + PHDR
-			dstphdrs[new_index].p_type = srcphdr->p_type;
+			// FIXME: LOAD für EHDR
+			dstphdrs[new_index].p_type = PT_LOAD;
 			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
 			dstphdrs[new_index].p_paddr = srcphdr->p_paddr;
 			if (elfclass == ELFCLASS32) {
-				dstphdrs[new_index].p_filesz = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
-				dstphdrs[new_index].p_memsz = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_filesz = sizeof(Elf32_Ehdr);
+				dstphdrs[new_index].p_memsz = sizeof(Elf32_Ehdr);
 			}
 			else {
-				dstphdrs[new_index].p_filesz = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
-				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_filesz = sizeof(Elf64_Ehdr);
+				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr);
 			}
 			dstphdrs[new_index].p_flags = srcphdr->p_flags;
 			// TODO: intelligentere Alignmentberechnung
 			dstphdrs[new_index].p_align = PAGESIZE;
 
-			segments_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 			new_index++;
 
-			// FIXME: new LOAD entries
 			for (size_t i = 0; i < scnnum; i++) {
 				Chain *tmp = &section_ranges[i];
 				while (tmp) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
 						// FIXME: offset in Datei berechnen
-						dstphdrs[new_index].p_offset = calculateCeil(segments_size, tmp->as.section_align);
+						dstphdrs[new_index].p_offset = tmp->as.section_offset + tmp->data.from;
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
@@ -735,13 +745,37 @@ int main(int argc, char **argv) {
 						// TODO: intelligentere Alignmentberechnung
 						dstphdrs[new_index].p_align = PAGESIZE;
 
-						segments_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 						new_index++;
 					}
 					tmp = tmp->next;
 				}
 			}
+			/*
+			// XXX: LOAD für PHDR - DEBUG
+			// FIXME: p_vaddr & p_paddr fixen
+			dstphdrs[new_index].p_type = PT_LOAD;
+			dstphdrs[new_index].p_offset = 138000;
+			dstehdr->e_phoff = 138000;
+			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf32_Ehdr);
+			dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf32_Ehdr);
+			if (elfclass == ELFCLASS32) {
+				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf32_Phdr);
+			}
+			else {
+				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
+			}
+			dstphdrs[new_index].p_flags = srcphdr->p_flags;
+			// TODO: intelligentere Alignmentberechnung
+			dstphdrs[new_index].p_align = PAGESIZE;
+
+			new_index++;
+			*/
 		}
+
+		// XXX: Debug
+		dstehdr->e_phoff = 445000;
 
 		/*
 		if (gelf_update_phdr(dste, i, &dstphdrs[i]) == 0) {
@@ -772,6 +806,13 @@ int main(int argc, char **argv) {
 	Elf_Scn *srcscn = NULL;		// current section of source file
 	// lib creates section 0 automatically
 	size_t current_filesize = 0;
+	// FIXME: calculate new current filesize
+	if (elfclass == ELFCLASS32) {
+		current_filesize = sizeof(Elf32_Ehdr);
+	}
+	else {
+		current_filesize = sizeof(Elf64_Ehdr);
+	}
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL) {
@@ -791,16 +832,6 @@ int main(int argc, char **argv) {
 		if (gelf_getshdr(dstscn, dstshdr) == NULL) {
 			error(0, 0, "could not retrieve new shdr structure for section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
-		}
-
-		// FIXME: calculate new current filesize
-		if (i == 1) {
-			if (elfclass == ELFCLASS32) {
-				current_filesize = sizeof(Elf32_Ehdr) + new_phdrnum * sizeof(Elf32_Phdr);
-			}
-			else {
-				current_filesize = sizeof(Elf64_Ehdr) + new_phdrnum * sizeof(Elf64_Phdr);
-			}
 		}
 
 		// FIXME: comment
@@ -858,8 +889,8 @@ int main(int argc, char **argv) {
 new_data:
 		;
 		// FIXME: srcdata nicht verwenden
-		size_t current_offset = srcshdr->sh_offset - (srcshdr->sh_offset % PAGESIZE);
-		size_t current_size = 0;
+		size_t current_section_offset = calculateOffset(srcshdr->sh_offset, current_filesize);
+		size_t current_offset = current_section_offset;
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
@@ -870,6 +901,8 @@ new_data:
 			Chain *tmp = get(&section_ranges[i], j);
 			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
 
+			// FIXME: an neue Berechnungsmethode anpassen
+			// FIXME: comment
 			if ((current_offset + off - srcshdr->sh_offset) % tmp->as.section_align != 0) {
 				error(0, 0, "in section %lu: range to keep is misaligned by %llu bytes (offset in section: %lu, aligment: %llu)", i, (current_offset + off - srcshdr->sh_offset) % tmp->as.section_align, current_offset + off - srcshdr->sh_offset, tmp->as.section_align);
 				goto err_free_dstshdr;
@@ -880,14 +913,9 @@ new_data:
 			// FIXME: srcdata nicht verwenden
 			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = data_buffers[j];
-			dstdata->d_off = current_offset + off - srcshdr->sh_offset;
+			dstdata->d_off = calculateOffset(srcshdr->sh_offset + tmp->data.from, current_offset) - current_section_offset;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
-			if (current_offset < srcshdr->sh_offset)
-				// first data range
-				current_size = dstdata->d_size;
-			else
-				current_size = current_offset + dstdata->d_size - srcshdr->sh_offset;
-			current_offset = calculateCeil(current_offset + off + dstdata->d_size, PAGESIZE);
+			current_offset = current_section_offset + dstdata->d_off + dstdata->d_size;
 		}
 
 		dstshdr->sh_info = srcshdr->sh_info;
@@ -901,11 +929,11 @@ new_data:
 			dstshdr->sh_addralign = 16;
 		else
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
-		dstshdr->sh_offset = calculateCeil(current_filesize, dstshdr->sh_addralign);
+		dstshdr->sh_offset = calculateOffset(srcshdr->sh_offset, current_filesize);
 		if (srcshdr->sh_type == SHT_NOBITS)
 			dstshdr->sh_size = srcshdr->sh_size;
 		else
-			dstshdr->sh_size = current_size;
+			dstshdr->sh_size = current_offset - current_section_offset;
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
