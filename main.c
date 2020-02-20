@@ -48,6 +48,26 @@ typedef struct chain{
 } Chain;
 
 /*
+ * Contains information about the location of data in the new file.
+ * start is the address of that data in the original file
+ * size is the size of that data in byte
+ * shift is the difference between the new and the old address of that data
+ *
+ * more formal:
+ * The data of the original file in range [start, start + size) resides in range
+ * [start - shift, start + size - shift) in the new file.
+ */
+struct relocation_info{
+	unsigned long long start;
+	size_t size;
+	signed long long shift;
+};
+
+struct relocation_infos{
+	struct relocation_infos *next;
+	struct relocation_info info;
+};
+/*
  * Get element from list by index.
  * Returns NULL if there is no entry with correspondig index.
  */
@@ -688,6 +708,12 @@ int main(int argc, char **argv) {
 
 	size_t new_index = 0;
 	int first_load = FALSE;
+	// FIXME: free
+	struct relocation_infos *relinfos = calloc(1, sizeof(struct relocation_infos));
+	if (relinfos == NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_srcphdr;
+	}
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -729,6 +755,9 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
+			relinfos->info.start = dstphdrs[new_index].p_offset;
+			relinfos->info.size = dstphdrs[new_index].p_filesz;
+			relinfos->info.shift = 0;
 			new_index++;
 
 			for (size_t i = 0; i < scnnum; i++) {
@@ -743,11 +772,35 @@ int main(int argc, char **argv) {
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
 						dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
 						dstphdrs[new_index].p_flags = tmp->as.flags;
-						// dstphdrs[new_index].p_align = tmp->as.align;
 						// TODO: intelligentere Alignmentberechnung
 						dstphdrs[new_index].p_align = PAGESIZE;
 
 						current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
+						if (relinfos->info.start + relinfos->info.size == tmp->as.section_offset + tmp->data.from && relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)relinfos->info.start){
+							relinfos->info.size += dstphdrs[new_index].p_filesz;
+						}
+						else {
+							struct relocation_infos *second_tmp_relinfos = relinfos;
+							struct relocation_infos *tmp_relinfos = relinfos->next;
+							while(tmp_relinfos != NULL){
+								if (tmp_relinfos->info.start + tmp_relinfos->info.size == tmp->as.section_offset + tmp->data.from && tmp_relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)tmp_relinfos->info.start - (signed long long)tmp_relinfos->info.size){
+									tmp_relinfos->info.size += dstphdrs[new_index].p_filesz;
+									break;
+								}
+								second_tmp_relinfos = tmp_relinfos;
+								tmp_relinfos = tmp_relinfos->next;
+							}
+							if(tmp_relinfos == NULL) {
+								second_tmp_relinfos->next = calloc(1, sizeof(struct relocation_infos));
+								if(second_tmp_relinfos->next == NULL) {
+									error(0, errno, "ran out of memory");
+									goto err_free_srcphdr;
+								}
+								second_tmp_relinfos->next->info.start = tmp->as.section_offset + tmp->data.from;
+								second_tmp_relinfos->next->info.size = dstphdrs[new_index].p_filesz;
+								second_tmp_relinfos->next->info.shift = (unsigned long long)second_tmp_relinfos->next->info.start - (unsigned long long)dstphdrs[new_index].p_offset;
+							}
+						}
 						new_index++;
 					}
 					tmp = tmp->next;
@@ -777,13 +830,17 @@ int main(int argc, char **argv) {
 
 			new_index++;
 		}
+	}
 
-		/*
-		if (gelf_update_phdr(dste, i, &dstphdrs[i]) == 0) {
-			error(0, 0, "could not update ELF structures (Segments): %s", elf_errmsg(-1));
-			goto err_free_srcphdr;
+	for (size_t i = 0; i < new_phdrnum; i++) {
+		if (dstphdrs[i].p_type != PT_LOAD) {
+			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
+				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
+					dstphdrs[i].p_offset -= tmp->info.shift;
+					break;
+				}
+			}
 		}
-		*/
 	}
 
 	// FIXME: comments!
