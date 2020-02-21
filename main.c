@@ -278,7 +278,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
 				tmp->as.section_offset = srcshdr->sh_offset;
-				// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -352,7 +351,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
 				tmp->as.section_offset = srcshdr->sh_offset;
-				// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -477,6 +475,17 @@ size_t calculateOffset(size_t priorOffset, size_t occupiedSpace) {
 	}
 }
 
+/*
+ * Frees a list of relocation information.
+ */
+void freeRelocs(struct relocation_infos *start) {
+	struct relocation_infos *tmp;
+	while (start != NULL) {
+		tmp = start->next;
+		free(start);
+		start = tmp;
+	}
+}
 
 
 // FIXME: comment
@@ -562,7 +571,7 @@ int main(int argc, char **argv) {
 	int srcfd;	// file descriptor of source file
 	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0) {
-		error(EXIT_FAILURE, errno, "unable to open %s", filename);
+		error(0, errno, "unable to open %s", filename);
 		goto err_free_ranges;
 	}
 	Elf *srce;	// ELF representation of source file
@@ -626,7 +635,6 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve executable header from source file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
-	errno = 0;
 	// executable header of new file
 	GElf_Ehdr *dstehdr;
 	/*
@@ -642,7 +650,7 @@ int main(int argc, char **argv) {
 	 */
 	if ((dstehdr = gelf_newehdr(dste, elfclass)) == NULL) {
 		error(0, 0, "could not create executable header of new file: %s", elf_errmsg(-1));
-		goto err_free_dstehdr;
+		goto err_free_srcehdr;
 	}
 	dstehdr->e_ident[EI_DATA] = srcehdr->e_ident[EI_DATA];
 	dstehdr->e_ident[EI_OSABI] = srcehdr->e_ident[EI_OSABI];
@@ -650,14 +658,14 @@ int main(int argc, char **argv) {
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
 	dstehdr->e_flags = srcehdr->e_flags;
-	// fall back if this attributes are not adjusted later
+	// fall back if these attributes are not adjusted later
 	dstehdr->e_shoff = srcehdr->e_shoff;
 	dstehdr->e_phoff = srcehdr->e_phoff;
 	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
 	dstehdr->e_entry = srcehdr->e_entry;
 	if (gelf_update_ehdr(dste, dstehdr) == 0) {
 		error(0, 0, "could not update ELF structures (Header): %s", elf_errmsg(-1));
-		goto err_free_dstehdr;
+		goto err_free_srcehdr;
 	}
 
 	// FIXME: comments
@@ -667,18 +675,16 @@ int main(int argc, char **argv) {
 	size_t scnnum = 0;		// number of sections in source file
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
 		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
-		goto err_free_dstehdr;
+		goto err_free_srcehdr;
 	}
 	errno = 0;
-	// FIXME: free section_ranges (normal + in case of an error)
-	// FIXME: initialize section_ranges
 	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
 	if (section_ranges == NULL) {
 		error(0, errno, "unable to allocate memory");
-		goto err_free_dstehdr;
+		goto err_free_srcehdr;
 	}
 	if (computeSectionRanges(srce, ranges, section_ranges, scnnum) != 0) {
-		goto err_free_dstehdr;
+		goto err_free_section_ranges;
 	}
 	deleteList(ranges);
 	ranges = NULL;
@@ -686,13 +692,13 @@ int main(int argc, char **argv) {
 	size_t phdrnum = 0;		// number of segments in source file
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
-		goto err_free_dstehdr;
+		goto err_free_section_ranges;
 	}
 	errno = 0;
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
-		goto err_free_dstehdr;
+		goto err_free_section_ranges;
 	}
 
 	int loads = countLOADs(srce);
@@ -708,7 +714,7 @@ int main(int argc, char **argv) {
 
 	size_t new_index = 0;
 	int first_load = FALSE;
-	// FIXME: free
+	errno = 0;
 	struct relocation_infos *relinfos = calloc(1, sizeof(struct relocation_infos));
 	if (relinfos == NULL) {
 		error(0, errno, "ran out of memory");
@@ -717,7 +723,7 @@ int main(int argc, char **argv) {
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
-			goto err_free_srcphdr;
+			goto err_free_relinfos;
 		}
 
 		if (srcphdr->p_type != PT_LOAD) {
@@ -737,7 +743,7 @@ int main(int argc, char **argv) {
 			first_load = TRUE;
 			size_t current_size = 0;
 
-			// FIXME: LOAD für EHDR
+			// LOAD segment for EHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
 			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
@@ -751,7 +757,6 @@ int main(int argc, char **argv) {
 				dstphdrs[new_index].p_memsz = sizeof(Elf64_Ehdr);
 			}
 			dstphdrs[new_index].p_flags = PF_X | PF_R;
-			// TODO: intelligentere Alignmentberechnung
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
@@ -765,14 +770,12 @@ int main(int argc, char **argv) {
 				while (tmp) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
-						// FIXME: offset in Datei berechnen
 						dstphdrs[new_index].p_offset = calculateOffset(tmp->as.section_offset + tmp->data.from, current_size);
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
 						dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
 						dstphdrs[new_index].p_flags = tmp->as.flags;
-						// TODO: intelligentere Alignmentberechnung
 						dstphdrs[new_index].p_align = PAGESIZE;
 
 						current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
@@ -791,10 +794,11 @@ int main(int argc, char **argv) {
 								tmp_relinfos = tmp_relinfos->next;
 							}
 							if(tmp_relinfos == NULL) {
+								errno = 0;
 								second_tmp_relinfos->next = calloc(1, sizeof(struct relocation_infos));
 								if(second_tmp_relinfos->next == NULL) {
 									error(0, errno, "ran out of memory");
-									goto err_free_srcphdr;
+									goto err_free_relinfos;
 								}
 								second_tmp_relinfos->next->info.start = tmp->as.section_offset + tmp->data.from;
 								second_tmp_relinfos->next->info.size = dstphdrs[new_index].p_filesz;
@@ -806,7 +810,6 @@ int main(int argc, char **argv) {
 					tmp = tmp->next;
 				}
 			}
-			// XXX: LOAD für PHDR - DEBUG
 			dstphdrs[new_index].p_type = PT_LOAD;
 			dstehdr->e_phoff = calculateOffset(0, current_size);
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
@@ -825,7 +828,6 @@ int main(int argc, char **argv) {
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
 			}
 			dstphdrs[new_index].p_flags = PF_X | PF_R;
-			// TODO: intelligentere Alignmentberechnung
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			new_index++;
@@ -842,6 +844,7 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
+	freeRelocs(relinfos);
 
 	// FIXME: comments!
 //-----------------------------------------------------------------------------
@@ -852,7 +855,7 @@ int main(int argc, char **argv) {
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
-		goto err_free_srcphdr;
+		goto err_free_relinfos;
 	}
 	errno = 0;
 	// storage for current section header of new file
@@ -862,15 +865,15 @@ int main(int argc, char **argv) {
 		goto err_free_srcshdr;
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
-	// lib creates section 0 automatically
 	size_t current_filesize = 0;
-	// FIXME: calculate new current filesize
 	if (elfclass == ELFCLASS32) {
 		current_filesize = sizeof(Elf32_Ehdr);
 	}
 	else {
 		current_filesize = sizeof(Elf64_Ehdr);
 	}
+
+	// lib creates section 0 automatically so we start with section 1
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL) {
@@ -957,12 +960,10 @@ new_data:
 			}
 
 			Chain *tmp = get(&section_ranges[i], j);
-			size_t off = calculateOffsetInPage(srcshdr->sh_offset + tmp->data.from);
-
-			// FIXME: an neue Berechnungsmethode anpassen
 			// FIXME: comment
-			if ((current_offset + off - srcshdr->sh_offset) % tmp->as.section_align != 0) {
-				error(0, 0, "in section %lu: range to keep is misaligned by %llu bytes (offset in section: %lu, aligment: %llu)", i, (current_offset + off - srcshdr->sh_offset) % tmp->as.section_align, current_offset + off - srcshdr->sh_offset, tmp->as.section_align);
+			// FIXME: früher prüfen?
+			if (tmp->data.from % tmp->as.section_align != 0) {
+				error(0, 0, "in section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->as.section_align, tmp->data.from, tmp->as.section_align);
 				goto err_free_dstshdr;
 			}
 			dstdata->d_align = tmp->as.section_align;
@@ -1010,10 +1011,13 @@ new_data:
 
 	if (elf_update(dste, ELF_C_WRITE) == -1) {
 		error(0, 0, "could not update ELF structures: %s", elf_errmsg(-1));
-		goto err_free_srcphdr;
+		goto err_free_dstshdr;
 	}
 
 	// tidy up
+	free(dstshdr);
+	free(srcshdr);
+	// FIXME: free relinfos
 	free(srcphdr);
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
@@ -1021,8 +1025,6 @@ new_data:
 		}
 	}
 	free(section_ranges);
-	free(dstshdr);
-	free(srcshdr);
 	free(srcehdr);
 	elf_end(dste);
 	errno = 0;
@@ -1031,8 +1033,8 @@ new_data:
 		goto err_free_dstfname;
 	}
 	free(dstfname);
-	errno = 0;
 	elf_end(srce);
+	errno = 0;
 	if (close(srcfd) < 0)
 		error(EXIT_FAILURE, errno, "unable to close %s", filename);
 
@@ -1042,10 +1044,17 @@ err_free_dstshdr:
 	free(dstshdr);
 err_free_srcshdr:
 	free(srcshdr);
+err_free_relinfos:
+	freeRelocs(relinfos);
 err_free_srcphdr:
 	free(srcphdr);
-err_free_dstehdr:
-	free(dstehdr);
+err_free_section_ranges:
+	for (size_t i = 0; i < scnnum; i++) {
+		if (section_ranges[i].next) {
+			deleteList(section_ranges[i].next);
+		}
+	}
+	free(section_ranges);
 err_free_srcehdr:
 	free(srcehdr);
 err_free_dste:
