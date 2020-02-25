@@ -132,7 +132,7 @@ int insert(Chain *start, Chain *elem) {
 		// between this two elements elem needs to be inserted
 		Chain *ahead = start->next;
 		Chain *following = start;
-		while (ahead != NULL && elem->data.from < ahead->data.from) {
+		while (ahead != NULL && elem->data.from > ahead->data.from) {
 			following = ahead;
 			ahead = ahead->next;
 		}
