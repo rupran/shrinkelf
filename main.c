@@ -720,6 +720,8 @@ int main(int argc, char **argv) {
 		error(0, errno, "ran out of memory");
 		goto err_free_srcphdr;
 	}
+	unsigned long long phdr_vaddr = 0;
+	unsigned long long phdr_paddr = 0;
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -740,6 +742,8 @@ int main(int argc, char **argv) {
 		else if (first_load)
 			continue;
 		else {
+			// FIXME: LOADs sortieren
+			// FIXME: Sicherstellen, dass PHDR nicht mitten ins Textsegment geladen wird
 			first_load = TRUE;
 			size_t current_size = 0;
 
@@ -815,15 +819,19 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
 			if (elfclass == ELFCLASS32) {
 				// FIXME: p_vaddr & p_paddr fixen
-				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf32_Ehdr);
-				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf32_Ehdr);
+				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
+				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
+				phdr_vaddr = dstphdrs[new_index].p_vaddr;
+				phdr_paddr = dstphdrs[new_index].p_paddr;
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf32_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf32_Phdr);
 			}
 			else {
 				// FIXME: p_vaddr & p_paddr fixen
-				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + sizeof(Elf64_Ehdr);
-				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + sizeof(Elf64_Ehdr);
+				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
+				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
+				phdr_vaddr = dstphdrs[new_index].p_vaddr;
+				phdr_paddr = dstphdrs[new_index].p_paddr;
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf64_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
 			}
@@ -836,6 +844,10 @@ int main(int argc, char **argv) {
 
 	for (size_t i = 0; i < new_phdrnum; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
+			if (dstphdrs[i].p_type == PT_PHDR) {
+				dstphdrs[i].p_paddr = phdr_paddr;
+				dstphdrs[i].p_vaddr = phdr_vaddr;
+			}
 			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
 				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
 					dstphdrs[i].p_offset -= tmp->info.shift;
