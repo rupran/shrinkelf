@@ -487,6 +487,14 @@ void freeRelocs(struct relocation_infos *start) {
 	}
 }
 
+/*
+ * Compare function for sorting PHDR table
+ */
+static int cmp (const void *p1, const void *p2) {
+	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
+}
+
+
 
 // FIXME: comment
 int main(int argc, char **argv) {
@@ -839,6 +847,7 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			new_index++;
+			qsort(&dstphdrs[i], new_index - i, sizeof(GElf_Phdr), &cmp);
 		}
 	}
 
