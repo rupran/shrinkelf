@@ -730,6 +730,8 @@ int main(int argc, char **argv) {
 	}
 	unsigned long long phdr_vaddr = 0;
 	unsigned long long phdr_paddr = 0;
+	unsigned long long phdr_offset = 0;
+	unsigned long long phdr_filesz = 0;
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -822,6 +824,7 @@ int main(int argc, char **argv) {
 					tmp = tmp->next;
 				}
 			}
+			// LOAD segment for PHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
 			dstehdr->e_phoff = calculateOffset(0, current_size);
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
@@ -829,19 +832,25 @@ int main(int argc, char **argv) {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				phdr_vaddr = dstphdrs[new_index].p_vaddr;
-				phdr_paddr = dstphdrs[new_index].p_paddr;
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf32_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf32_Phdr);
+
+				phdr_vaddr = dstphdrs[new_index].p_vaddr;
+				phdr_paddr = dstphdrs[new_index].p_paddr;
+				phdr_offset = dstphdrs[new_index].p_offset;
+				phdr_filesz = dstphdrs[new_index].p_filesz;
 			}
 			else {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				phdr_vaddr = dstphdrs[new_index].p_vaddr;
-				phdr_paddr = dstphdrs[new_index].p_paddr;
 				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf64_Phdr);
 				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
+
+				phdr_vaddr = dstphdrs[new_index].p_vaddr;
+				phdr_paddr = dstphdrs[new_index].p_paddr;
+				phdr_offset = dstphdrs[new_index].p_offset;
+				phdr_filesz = dstphdrs[new_index].p_filesz;
 			}
 			dstphdrs[new_index].p_flags = PF_X | PF_R;
 			dstphdrs[new_index].p_align = PAGESIZE;
@@ -853,15 +862,18 @@ int main(int argc, char **argv) {
 
 	for (size_t i = 0; i < new_phdrnum; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
-			if (dstphdrs[i].p_type == PT_PHDR) {
-				dstphdrs[i].p_paddr = phdr_paddr;
-				dstphdrs[i].p_vaddr = phdr_vaddr;
-			}
 			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
 				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
 					dstphdrs[i].p_offset -= tmp->info.shift;
 					break;
 				}
+			}
+			if (dstphdrs[i].p_type == PT_PHDR) {
+				dstphdrs[i].p_paddr = phdr_paddr;
+				dstphdrs[i].p_vaddr = phdr_vaddr;
+				dstphdrs[i].p_offset = phdr_offset;
+				dstphdrs[i].p_filesz = phdr_filesz;
+				dstphdrs[i].p_memsz = phdr_filesz;
 			}
 		}
 	}
