@@ -29,7 +29,8 @@ typedef struct range{
 	unsigned long long to;
 	unsigned long long section_offset;
 	unsigned long long section_align;
-	signed long long shift;
+	signed long long section_shift;
+	signed long long data_shift;
 } Range;
 
 // FIXME: comment
@@ -531,7 +532,8 @@ struct phdrDescription * calculateNewFilelayout(Chain *ranges, size_t size, size
 	else {
 		current_size = sizeof(Elf64_Ehdr);
 	}
-	for (size_t i = 0; i < size; i++) {
+	// ignore section 0
+	for (size_t i = 1; i < size; i++) {
 		unsigned long long phdr_start = 0;
 		unsigned long long phdr_size = 0;
 		if (elfclass == ELFCLASS32) {
@@ -551,7 +553,9 @@ struct phdrDescription * calculateNewFilelayout(Chain *ranges, size_t size, size
 			ret->entries = loads + oldEntries;
 		}
 		for (; tmp; tmp = tmp->next) {
-			tmp->data.shift = (tmp->data.section_offset + tmp->data.from) - calculateOffset(tmp->data.section_offset + tmp->data.from, current_size);
+			tmp->data.section_shift = calculateOffset(tmp->data.section_offset, current_size) - tmp->data.section_offset;
+			tmp->data.data_shift = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size) - (tmp->data.section_offset + tmp->data.from) - tmp->data.section_shift;
+			current_size = tmp->data.section_offset + tmp->data.to + tmp->data.section_shift + tmp->data.data_shift;
 		}
 	}
 	return ret;
@@ -776,9 +780,8 @@ int main(int argc, char **argv) {
 	if (loads == -1)
 		goto err_free_srcphdr;
 	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
-	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 2;
 	struct phdrDescription *phdrDesc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
-	GElf_Phdr *dstphdrs = gelf_newphdr(dste, new_phdrnum);
+	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrDesc->entries);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
 		goto err_free_srcphdr;
@@ -819,7 +822,6 @@ int main(int argc, char **argv) {
 			// FIXME: LOADs sortieren
 			// FIXME: Sicherstellen, dass PHDR nicht mitten ins Textsegment geladen wird
 			first_load = TRUE;
-			size_t current_size = 0;
 
 			// LOAD segment for EHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
@@ -837,7 +839,6 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_flags = PF_X | PF_R;
 			dstphdrs[new_index].p_align = PAGESIZE;
 
-			current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 			relinfos->info.start = dstphdrs[new_index].p_offset;
 			relinfos->info.size = dstphdrs[new_index].p_filesz;
 			relinfos->info.shift = 0;
@@ -848,7 +849,7 @@ int main(int argc, char **argv) {
 				while (tmp) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
-						dstphdrs[new_index].p_offset = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size);
+						dstphdrs[new_index].p_offset = tmp->data.section_offset + tmp->data.from + tmp->data.section_shift + tmp->data.data_shift;
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
@@ -856,7 +857,6 @@ int main(int argc, char **argv) {
 						dstphdrs[new_index].p_flags = tmp->as.flags;
 						dstphdrs[new_index].p_align = PAGESIZE;
 
-						current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
 						if (relinfos->info.start + relinfos->info.size == tmp->data.section_offset + tmp->data.from && relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)relinfos->info.start){
 							relinfos->info.size += dstphdrs[new_index].p_filesz;
 						}
@@ -890,14 +890,14 @@ int main(int argc, char **argv) {
 			}
 			// LOAD segment for PHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
-			dstehdr->e_phoff = calculateOffset(0, current_size);
+			dstehdr->e_phoff = phdrDesc->start;
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
 			if (elfclass == ELFCLASS32) {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf32_Phdr);
-				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_filesz = phdrDesc->entries * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_memsz = phdrDesc->entries * sizeof(Elf32_Phdr);
 
 				phdr_vaddr = dstphdrs[new_index].p_vaddr;
 				phdr_paddr = dstphdrs[new_index].p_paddr;
@@ -908,8 +908,8 @@ int main(int argc, char **argv) {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_filesz = new_phdrnum * sizeof(Elf64_Phdr);
-				dstphdrs[new_index].p_memsz = new_phdrnum * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_filesz = phdrDesc->entries * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_memsz = phdrDesc->entries * sizeof(Elf64_Phdr);
 
 				phdr_vaddr = dstphdrs[new_index].p_vaddr;
 				phdr_paddr = dstphdrs[new_index].p_paddr;
@@ -924,7 +924,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	for (size_t i = 0; i < new_phdrnum; i++) {
+	for (size_t i = 0; i < phdrDesc->entries; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
 			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
 				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
