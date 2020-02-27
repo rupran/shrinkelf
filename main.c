@@ -22,12 +22,14 @@ const char *FILESUFFIX = ".shrinked";
 /*
  * Contains start and end of range to keep based on addresses in the file.
  * section_offset is the offset of the section in the original file, from and to are adresses based on section_offset.
+ * FIXME: shift kommentieren
  */
 typedef struct range{
 	unsigned long long from;
 	unsigned long long to;
 	unsigned long long section_offset;
 	unsigned long long section_align;
+	signed long long shift;
 } Range;
 
 // FIXME: comment
@@ -68,6 +70,17 @@ struct relocation_infos{
 	struct relocation_infos *next;
 	struct relocation_info info;
 };
+
+/*
+ * Description of the PHDR table in the new file with its start address and number of entries.
+ */
+struct phdrDescription {
+	unsigned long long start;
+	unsigned long long entries;
+};
+
+
+
 /*
  * Get element from list by index.
  * Returns NULL if there is no entry with correspondig index.
@@ -499,6 +512,51 @@ static int cmp (const void *p1, const void *p2) {
 	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
 }
 
+/*
+ * FIXME: comment
+ * oldEntries: number of PHDR entries of original file that are NOT LOADs
+ * fileheader: size of ELF file header
+ */
+struct phdrDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass) {
+	errno = 0;
+	struct phdrDescription *ret = calloc(1, sizeof(struct phdrDescription));
+
+	// number of LOAD entries in new PHDR table
+	size_t loads = countLoadableRanges(ranges, size) + 2;
+	int phdr_not_inserted = TRUE;
+	unsigned long long current_size = 0;
+	if (elfclass == ELFCLASS32) {
+		current_size = sizeof(Elf32_Ehdr);
+	}
+	else {
+		current_size = sizeof(Elf64_Ehdr);
+	}
+	for (size_t i = 0; i < size; i++) {
+		unsigned long long phdr_start = 0;
+		unsigned long long phdr_size = 0;
+		if (elfclass == ELFCLASS32) {
+			phdr_start = calculateCeil(current_size, sizeof(Elf32_Phdr));
+			phdr_size = (loads + oldEntries) * sizeof(Elf32_Phdr);
+		}
+		else {
+			phdr_start = calculateCeil(current_size, sizeof(Elf64_Phdr));
+			phdr_size = (loads + oldEntries) * sizeof(Elf64_Phdr);
+		}
+
+		Chain *tmp = &ranges[i];
+		if (phdr_not_inserted && tmp->data.section_offset >= (phdr_start + phdr_size)) {
+			phdr_not_inserted = FALSE;
+			current_size = phdr_start + phdr_size;
+			ret->start = phdr_start;
+			ret->entries = loads + oldEntries;
+		}
+		for (; tmp; tmp = tmp->next) {
+			tmp->data.shift = (tmp->data.section_offset + tmp->data.from) - calculateOffset(tmp->data.section_offset + tmp->data.from, current_size);
+		}
+	}
+	return ret;
+}
+
 
 
 // FIXME: comment
@@ -719,6 +777,7 @@ int main(int argc, char **argv) {
 		goto err_free_srcphdr;
 	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
 	size_t new_phdrnum = phdrnum - loads + countLoadableRanges(section_ranges, scnnum) + 2;
+	struct phdrDescription *phdrDesc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, new_phdrnum);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
