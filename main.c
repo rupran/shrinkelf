@@ -21,10 +21,13 @@ const char *FILESUFFIX = ".shrinked";
 
 /*
  * Contains start and end of range to keep based on addresses in the file.
+ * section_offset is the offset of the section in the original file, from and to are adresses based on section_offset.
  */
 typedef struct range{
 	unsigned long long from;
 	unsigned long long to;
+	unsigned long long section_offset;
+	unsigned long long section_align;
 } Range;
 
 // FIXME: comment
@@ -32,8 +35,6 @@ struct address_space_info{
 	int loadable;
 	unsigned long long flags;
 	unsigned long long align;
-	unsigned long long section_offset;
-	unsigned long long section_align;
 	unsigned long long from;
 	unsigned long long to;
 };
@@ -96,12 +97,12 @@ int insert(Chain *start, Chain *elem) {
 		Range tmp;
 		tmp.from = elem->data.from;
 		tmp.to = elem->data.to;
+		tmp.section_offset = elem->data.section_offset;
+		tmp.section_align = elem->data.section_align;
 		struct address_space_info tmp_info;
 		tmp_info.loadable = elem->as.loadable;
 		tmp_info.flags = elem->as.flags;
 		tmp_info.align = elem->as.align;
-		tmp_info.section_offset = elem->as.section_offset;
-		tmp_info.section_align = elem->as.section_align;
 		tmp_info.from = elem->as.from;
 		tmp_info.to = elem->as.to;
 
@@ -110,21 +111,21 @@ int insert(Chain *start, Chain *elem) {
 
 		elem->data.from = start->data.from;
 		elem->data.to = start->data.to;
+		elem->data.section_offset = start->data.section_offset;
+		elem->data.section_align = start->data.section_align;
 		elem->as.loadable = start->as.loadable;
 		elem->as.flags = start->as.flags;
 		elem->as.align = start->as.align;
-		elem->as.section_offset = start->as.section_offset;
-		elem->as.section_align = start->as.section_align;
 		elem->as.from = start->as.from;
 		elem->as.to = start->as.to;
 
 		start->data.from = tmp.from;
 		start->data.to = tmp.to;
+		start->data.section_offset = tmp.section_offset;
+		start->data.section_align = tmp.section_align;
 		start->as.loadable = tmp_info.loadable;
 		start->as.flags = tmp_info.flags;
 		start->as.align = tmp_info.align;
-		start->as.section_offset = tmp_info.section_offset;
-		start->as.section_align = tmp_info.section_align;
 		start->as.from = tmp_info.from;
 		start->as.to = tmp_info.to;
 	}
@@ -255,10 +256,13 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				else
 					tmp->data.to = srcshdr->sh_size;
 			}
+			// Alignment im Testfall
 			if (srcshdr->sh_addralign != 65536)
-				tmp->as.section_align = srcshdr->sh_addralign;
-			else
-				tmp->as.section_align = 16;
+				tmp->data.section_align = srcshdr->sh_addralign;
+			else {
+				tmp->data.section_align = 16;
+			}
+			tmp->data.section_offset = srcshdr->sh_offset;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -277,7 +281,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				tmp->as.section_offset = srcshdr->sh_offset;
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -294,13 +297,13 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
+				dest[i].data.section_offset = tmp->data.section_offset;
+				dest[i].data.section_align = tmp->data.section_align;
 				dest[i].as.from = tmp->as.from;
 				dest[i].as.to = tmp->as.to;
 				dest[i].as.loadable = tmp->as.loadable;
 				dest[i].as.flags = tmp->as.flags;
 				dest[i].as.align = tmp->as.align;
-				dest[i].as.section_offset = tmp->as.section_offset;
-				dest[i].as.section_align = tmp->as.section_align;
 				free(tmp);
 			}
 			else
@@ -328,10 +331,13 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					tmp->data.from = current->data.from - srcshdr->sh_offset;
 				tmp->data.to = srcshdr->sh_size;
 			}
+			// FIXME: Alignment im Testfall
 			if (srcshdr->sh_addralign != 65536)
-				tmp->as.section_align = srcshdr->sh_addralign;
-			else
-				tmp->as.section_align = 16;
+				tmp->data.section_align = srcshdr->sh_addralign;
+			else {
+				tmp->data.section_align = 16;
+			}
+			tmp->data.section_offset = srcshdr->sh_offset;
 
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
@@ -350,7 +356,6 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				tmp->as.section_offset = srcshdr->sh_offset;
 				if (srcphdr->p_offset <= srcshdr->sh_offset)
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				else
@@ -367,13 +372,13 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			if (dest[i].data.to == 0) {
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
+				dest[i].data.section_offset = tmp->data.section_offset;
+				dest[i].data.section_align = tmp->data.section_align;
 				dest[i].as.from = tmp->as.from;
 				dest[i].as.to = tmp->as.to;
 				dest[i].as.loadable = tmp->as.loadable;
 				dest[i].as.flags = tmp->as.flags;
 				dest[i].as.align = tmp->as.align;
-				dest[i].as.section_offset = tmp->as.section_offset;
-				dest[i].as.section_align = tmp->as.section_align;
 				free(tmp);
 			}
 			else
@@ -784,7 +789,7 @@ int main(int argc, char **argv) {
 				while (tmp) {
 					if (tmp->as.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
-						dstphdrs[new_index].p_offset = calculateOffset(tmp->as.section_offset + tmp->data.from, current_size);
+						dstphdrs[new_index].p_offset = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size);
 						dstphdrs[new_index].p_vaddr = tmp->as.from;
 						dstphdrs[new_index].p_paddr = tmp->as.from;
 						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
@@ -793,14 +798,14 @@ int main(int argc, char **argv) {
 						dstphdrs[new_index].p_align = PAGESIZE;
 
 						current_size = dstphdrs[new_index].p_offset + dstphdrs[new_index].p_filesz;
-						if (relinfos->info.start + relinfos->info.size == tmp->as.section_offset + tmp->data.from && relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)relinfos->info.start){
+						if (relinfos->info.start + relinfos->info.size == tmp->data.section_offset + tmp->data.from && relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)relinfos->info.start){
 							relinfos->info.size += dstphdrs[new_index].p_filesz;
 						}
 						else {
 							struct relocation_infos *second_tmp_relinfos = relinfos;
 							struct relocation_infos *tmp_relinfos = relinfos->next;
 							while(tmp_relinfos != NULL){
-								if (tmp_relinfos->info.start + tmp_relinfos->info.size == tmp->as.section_offset + tmp->data.from && tmp_relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)tmp_relinfos->info.start - (signed long long)tmp_relinfos->info.size){
+								if (tmp_relinfos->info.start + tmp_relinfos->info.size == tmp->data.section_offset + tmp->data.from && tmp_relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)tmp_relinfos->info.start - (signed long long)tmp_relinfos->info.size){
 									tmp_relinfos->info.size += dstphdrs[new_index].p_filesz;
 									break;
 								}
@@ -814,7 +819,7 @@ int main(int argc, char **argv) {
 									error(0, errno, "ran out of memory");
 									goto err_free_relinfos;
 								}
-								second_tmp_relinfos->next->info.start = tmp->as.section_offset + tmp->data.from;
+								second_tmp_relinfos->next->info.start = tmp->data.section_offset + tmp->data.from;
 								second_tmp_relinfos->next->info.size = dstphdrs[new_index].p_filesz;
 								second_tmp_relinfos->next->info.shift = (unsigned long long)second_tmp_relinfos->next->info.start - (unsigned long long)dstphdrs[new_index].p_offset;
 							}
@@ -995,11 +1000,11 @@ new_data:
 			Chain *tmp = get(&section_ranges[i], j);
 			// FIXME: comment
 			// FIXME: früher prüfen?
-			if (tmp->data.from % tmp->as.section_align != 0) {
-				error(0, 0, "in section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->as.section_align, tmp->data.from, tmp->as.section_align);
+			if (tmp->data.from % tmp->data.section_align != 0) {
+				error(0, 0, "in section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->data.section_align, tmp->data.from, tmp->data.section_align);
 				goto err_free_dstshdr;
 			}
-			dstdata->d_align = tmp->as.section_align;
+			dstdata->d_align = tmp->data.section_align;
 			// FIXME: srcdata nicht verwenden
 			dstdata->d_type = srcdata->d_type;
 			// FIXME: srcdata nicht verwenden
