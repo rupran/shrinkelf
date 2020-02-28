@@ -73,11 +73,13 @@ struct relocation_infos{
 };
 
 /*
+ * FIXME: korrigieren
  * Description of the PHDR table in the new file with its start address and number of entries.
  */
-struct phdrDescription {
-	unsigned long long start;
-	unsigned long long entries;
+struct layoutDescription {
+	unsigned long long phdr_start;
+	unsigned long long phdr_entries;
+	unsigned long long shdr_start;
 };
 
 
@@ -518,9 +520,13 @@ static int cmp (const void *p1, const void *p2) {
  * oldEntries: number of PHDR entries of original file that are NOT LOADs
  * fileheader: size of ELF file header
  */
-struct phdrDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass) {
+struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass) {
 	errno = 0;
-	struct phdrDescription *ret = calloc(1, sizeof(struct phdrDescription));
+	struct layoutDescription *ret = calloc(1, sizeof(struct layoutDescription));
+	if (ret == NULL) {
+		error(0, 0, "ran out of memory");
+		return NULL;
+	}
 
 	// number of LOAD entries in new PHDR table
 	size_t loads = countLoadableRanges(ranges, size) + 2;
@@ -549,16 +555,38 @@ struct phdrDescription * calculateNewFilelayout(Chain *ranges, size_t size, size
 		if (phdr_not_inserted && tmp->data.section_offset >= (phdr_start + phdr_size)) {
 			phdr_not_inserted = FALSE;
 			current_size = phdr_start + phdr_size;
-			ret->start = phdr_start;
-			ret->entries = loads + oldEntries;
+			ret->phdr_start = phdr_start;
+			ret->phdr_entries = loads + oldEntries;
 		}
+		// size of already inserted complete sections
+		unsigned long long current_section_offset = current_size;
 		for (; tmp; tmp = tmp->next) {
-			tmp->data.section_shift = calculateOffset(tmp->data.section_offset, current_size) - tmp->data.section_offset;
-			tmp->data.data_shift = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size) - (tmp->data.section_offset + tmp->data.from) - tmp->data.section_shift;
+			tmp->data.section_shift = calculateOffset(tmp->data.section_offset, current_section_offset) - tmp->data.section_offset;
+			tmp->data.data_shift = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size) - (tmp->data.section_offset + tmp->data.from + tmp->data.section_shift);
 			current_size = tmp->data.section_offset + tmp->data.to + tmp->data.section_shift + tmp->data.data_shift;
 		}
 	}
+	if (elfclass == ELFCLASS32) {
+		ret->shdr_start = calculateCeil(current_size, sizeof(Elf32_Shdr));
+	}
+	else {
+		ret->shdr_start = calculateCeil(current_size, sizeof(Elf64_Shdr));
+	}
 	return ret;
+}
+
+/*
+ * Calculates the size of a section.
+ */
+unsigned long long calculateSectionSize(Chain *section) {
+	unsigned long long size = 0;
+	for (Chain *tmp = section; tmp; tmp = tmp->next) {
+		unsigned long long temp_size = tmp->data.to + tmp->data.data_shift;
+		if (temp_size > size) {
+			size = temp_size;
+		}
+	}
+	return size;
 }
 
 
@@ -780,11 +808,14 @@ int main(int argc, char **argv) {
 	if (loads == -1)
 		goto err_free_srcphdr;
 	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
-	struct phdrDescription *phdrDesc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
-	GElf_Phdr *dstphdrs = gelf_newphdr(dste, phdrDesc->entries);
+	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
+	if (desc == NULL) {
+		goto err_free_srcphdr;
+	}
+	GElf_Phdr *dstphdrs = gelf_newphdr(dste, desc->phdr_entries);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
-		goto err_free_srcphdr;
+		goto err_free_desc;
 	}
 
 	size_t new_index = 0;
@@ -793,7 +824,7 @@ int main(int argc, char **argv) {
 	struct relocation_infos *relinfos = calloc(1, sizeof(struct relocation_infos));
 	if (relinfos == NULL) {
 		error(0, errno, "ran out of memory");
-		goto err_free_srcphdr;
+		goto err_free_desc;
 	}
 	unsigned long long phdr_vaddr = 0;
 	unsigned long long phdr_paddr = 0;
@@ -890,14 +921,14 @@ int main(int argc, char **argv) {
 			}
 			// LOAD segment for PHDR
 			dstphdrs[new_index].p_type = PT_LOAD;
-			dstehdr->e_phoff = phdrDesc->start;
+			dstehdr->e_phoff = desc->phdr_start;
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
 			if (elfclass == ELFCLASS32) {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_filesz = phdrDesc->entries * sizeof(Elf32_Phdr);
-				dstphdrs[new_index].p_memsz = phdrDesc->entries * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_filesz = desc->phdr_entries * sizeof(Elf32_Phdr);
+				dstphdrs[new_index].p_memsz = desc->phdr_entries * sizeof(Elf32_Phdr);
 
 				phdr_vaddr = dstphdrs[new_index].p_vaddr;
 				phdr_paddr = dstphdrs[new_index].p_paddr;
@@ -908,8 +939,8 @@ int main(int argc, char **argv) {
 				// FIXME: p_vaddr & p_paddr fixen
 				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
 				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_filesz = phdrDesc->entries * sizeof(Elf64_Phdr);
-				dstphdrs[new_index].p_memsz = phdrDesc->entries * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_filesz = desc->phdr_entries * sizeof(Elf64_Phdr);
+				dstphdrs[new_index].p_memsz = desc->phdr_entries * sizeof(Elf64_Phdr);
 
 				phdr_vaddr = dstphdrs[new_index].p_vaddr;
 				phdr_paddr = dstphdrs[new_index].p_paddr;
@@ -924,7 +955,7 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	for (size_t i = 0; i < phdrDesc->entries; i++) {
+	for (size_t i = 0; i < desc->phdr_entries; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
 			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
 				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
@@ -962,13 +993,6 @@ int main(int argc, char **argv) {
 		goto err_free_srcshdr;
 	}
 	Elf_Scn *srcscn = NULL;		// current section of source file
-	size_t current_filesize = 0;
-	if (elfclass == ELFCLASS32) {
-		current_filesize = sizeof(Elf32_Ehdr);
-	}
-	else {
-		current_filesize = sizeof(Elf64_Ehdr);
-	}
 
 	// lib creates section 0 automatically so we start with section 1
 	for (size_t i = 1; i < scnnum; i++) {
@@ -1047,8 +1071,6 @@ int main(int argc, char **argv) {
 new_data:
 		;
 		// FIXME: srcdata nicht verwenden
-		size_t current_section_offset = calculateOffset(srcshdr->sh_offset, current_filesize);
-		size_t current_offset = current_section_offset;
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
@@ -1069,9 +1091,8 @@ new_data:
 			// FIXME: srcdata nicht verwenden
 			dstdata->d_version = srcdata->d_version;
 			dstdata->d_buf = data_buffers[j];
-			dstdata->d_off = calculateOffset(srcshdr->sh_offset + tmp->data.from, current_offset) - current_section_offset;
+			dstdata->d_off = tmp->data.from + tmp->data.data_shift;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
-			current_offset = current_section_offset + dstdata->d_off + dstdata->d_size;
 		}
 
 		dstshdr->sh_info = srcshdr->sh_info;
@@ -1085,11 +1106,11 @@ new_data:
 			dstshdr->sh_addralign = 16;
 		else
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
-		dstshdr->sh_offset = calculateOffset(srcshdr->sh_offset, current_filesize);
+		dstshdr->sh_offset = srcshdr->sh_offset + section_ranges[i].data.section_shift;
 		if (srcshdr->sh_type == SHT_NOBITS)
 			dstshdr->sh_size = srcshdr->sh_size;
 		else
-			dstshdr->sh_size = current_offset - current_section_offset;
+			dstshdr->sh_size = calculateSectionSize(&section_ranges[i]);
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
@@ -1097,14 +1118,9 @@ new_data:
 			error(0, 0, "could not update ELF structures (Sections): %s", elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
-		if (srcshdr->sh_type != SHT_NOBITS)
-			current_filesize = dstshdr->sh_offset + dstshdr->sh_size;
 	}
 
-	if (elfclass == ELFCLASS32)
-		dstehdr->e_shoff = calculateCeil(current_filesize, sizeof(Elf32_Shdr));
-	else
-		dstehdr->e_shoff = calculateCeil(current_filesize, sizeof(Elf64_Shdr));
+	dstehdr->e_shoff = desc->shdr_start;
 
 	if (elf_update(dste, ELF_C_WRITE) == -1) {
 		error(0, 0, "could not update ELF structures: %s", elf_errmsg(-1));
@@ -1115,6 +1131,7 @@ new_data:
 	free(dstshdr);
 	free(srcshdr);
 	// FIXME: free relinfos
+	free(desc);
 	free(srcphdr);
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
@@ -1143,6 +1160,8 @@ err_free_srcshdr:
 	free(srcshdr);
 err_free_relinfos:
 	freeRelocs(relinfos);
+err_free_desc:
+	free(desc);
 err_free_srcphdr:
 	free(srcphdr);
 err_free_section_ranges:
