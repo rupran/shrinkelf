@@ -477,6 +477,7 @@ int countLoadableRanges(Chain *ranges, size_t size) {
 }
 
 /*
+ * FIXME: korrigieren
  * Calculates offset of a structure in its containing structure (section/file or
  * data block/section). priorOffset is the offset of that structure in the original file,
  * occupiedSpace points to the first free byte in the containing structure where that structure
@@ -850,7 +851,6 @@ int main(int argc, char **argv) {
 		else if (first_load)
 			continue;
 		else {
-			// FIXME: LOADs sortieren
 			// FIXME: Sicherstellen, dass PHDR nicht mitten ins Textsegment geladen wird
 			first_load = TRUE;
 
@@ -973,6 +973,7 @@ int main(int argc, char **argv) {
 		}
 	}
 	freeRelocs(relinfos);
+	relinfos = NULL;
 
 	// FIXME: comments!
 //-----------------------------------------------------------------------------
@@ -1038,6 +1039,7 @@ int main(int argc, char **argv) {
 			// FIXME: databuffer contains only a part of range to keep
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
+			// TODO: find und get in eine Funktion zusammenfassen? find einen Chain* zurückgeben lassen?
 			size_t index = find(&section_ranges[i], srcdata_begin);
 			Chain *tmp = get(&section_ranges[i], index);
 			// XXX: Debug
@@ -1130,7 +1132,6 @@ new_data:
 	// tidy up
 	free(dstshdr);
 	free(srcshdr);
-	// FIXME: free relinfos
 	free(desc);
 	free(srcphdr);
 	for (size_t i = 0; i < scnnum; i++) {
@@ -1159,7 +1160,9 @@ err_free_dstshdr:
 err_free_srcshdr:
 	free(srcshdr);
 err_free_relinfos:
-	freeRelocs(relinfos);
+	if (relinfos != NULL) {
+		freeRelocs(relinfos);
+	}
 err_free_desc:
 	free(desc);
 err_free_srcphdr:
