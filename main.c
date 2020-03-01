@@ -22,7 +22,7 @@ const char *FILESUFFIX = ".shrinked";
 /*
  * Contains start and end of range to keep based on addresses in the file.
  * section_offset is the offset of the section in the original file, from and to are adresses based on section_offset.
- * FIXME: shift kommentieren
+ * FIXME: shift, buffer, d_type, d_version kommentieren
  */
 typedef struct range{
 	unsigned long long from;
@@ -31,6 +31,9 @@ typedef struct range{
 	unsigned long long section_align;
 	signed long long section_shift;
 	signed long long data_shift;
+	char *buffer;
+	Elf_Type d_type;
+	unsigned int d_version;
 } Range;
 
 // FIXME: comment
@@ -175,6 +178,9 @@ void deleteList(Chain *start) {
 	while (tmp != NULL) {
 		start = tmp;
 		tmp = tmp->next;
+		if (start->data.buffer) {
+			free(start->data.buffer);
+		}
 		free(start);
 	}
 }
@@ -525,7 +531,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	errno = 0;
 	struct layoutDescription *ret = calloc(1, sizeof(struct layoutDescription));
 	if (ret == NULL) {
-		error(0, 0, "ran out of memory");
+		error(0, errno, "ran out of memory");
 		return NULL;
 	}
 
@@ -1018,12 +1024,11 @@ int main(int argc, char **argv) {
 		}
 
 		// FIXME: comment
-		char *data_buffers[size(&section_ranges[i])];
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Chain *tmp = get(&section_ranges[i], j);
 			errno = 0;
-			data_buffers[j] = calloc(tmp->data.to - tmp->data.from, sizeof(char));
-			if (data_buffers[j] == NULL) {
+			tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
+			if (tmp->data.buffer == NULL) {
 				error(0, errno, "Unable to allocate memory");
 				goto err_free_dstshdr;
 			}
@@ -1051,7 +1056,7 @@ int main(int argc, char **argv) {
 			while (tmp->data.to <= srcdata_end) {
 				// range is in srcdata->d_buf
 				data_size = tmp->data.to - tmp->data.from;
-				memcpy(data_buffers[index], srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+				memcpy(tmp->data.buffer, srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
 				// advance to next range, while condition checks if that range is still in srcdata->d_buf
 				tmp = tmp->next;
 				index++;
@@ -1065,7 +1070,7 @@ int main(int argc, char **argv) {
 				// beginning of range is in srcdata->d_buf, end of range is not
 				// maybe this will not happen at all, but libelf does not guarantee that
 				data_size = srcdata_end - tmp->data.from;
-				memcpy(data_buffers[index], srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+				memcpy(tmp->data.buffer, srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
 				// FIXME: offset in destination buffer
 			}
 		}
@@ -1088,11 +1093,10 @@ new_data:
 				goto err_free_dstshdr;
 			}
 			dstdata->d_align = tmp->data.section_align;
-			// FIXME: srcdata nicht verwenden
 			dstdata->d_type = srcdata->d_type;
 			// FIXME: srcdata nicht verwenden
 			dstdata->d_version = srcdata->d_version;
-			dstdata->d_buf = data_buffers[j];
+			dstdata->d_buf = tmp->data.buffer;
 			dstdata->d_off = tmp->data.from + tmp->data.data_shift;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
 		}
@@ -1138,6 +1142,9 @@ new_data:
 		if (section_ranges[i].next) {
 			deleteList(section_ranges[i].next);
 		}
+		if (section_ranges[i].data.buffer) {
+			free(section_ranges[i].data.buffer);
+		}
 	}
 	free(section_ranges);
 	free(srcehdr);
@@ -1171,6 +1178,9 @@ err_free_section_ranges:
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
 			deleteList(section_ranges[i].next);
+		}
+		if (section_ranges[i].data.buffer) {
+			free(section_ranges[i].data.buffer);
 		}
 	}
 	free(section_ranges);
