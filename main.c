@@ -174,6 +174,9 @@ int insert(Chain *start, Chain *elem) {
  */
 void deleteList(Chain *start) {
 	Chain *tmp = start->next;
+	if (start->data.buffer) {
+		free(start->data.buffer);
+	}
 	free(start);
 	while (tmp != NULL) {
 		start = tmp;
@@ -1024,8 +1027,7 @@ int main(int argc, char **argv) {
 		}
 
 		// FIXME: comment
-		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
-			Chain *tmp = get(&section_ranges[i], j);
+		for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 			errno = 0;
 			tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
 			if (tmp->data.buffer == NULL) {
@@ -1057,6 +1059,8 @@ int main(int argc, char **argv) {
 				// range is in srcdata->d_buf
 				data_size = tmp->data.to - tmp->data.from;
 				memcpy(tmp->data.buffer, srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+				tmp->data.d_version = srcdata->d_version;
+				tmp->data.d_type = srcdata->d_type;
 				// advance to next range, while condition checks if that range is still in srcdata->d_buf
 				tmp = tmp->next;
 				index++;
@@ -1077,7 +1081,6 @@ int main(int argc, char **argv) {
 
 new_data:
 		;
-		// FIXME: srcdata nicht verwenden
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
@@ -1093,9 +1096,8 @@ new_data:
 				goto err_free_dstshdr;
 			}
 			dstdata->d_align = tmp->data.section_align;
-			dstdata->d_type = srcdata->d_type;
-			// FIXME: srcdata nicht verwenden
-			dstdata->d_version = srcdata->d_version;
+			dstdata->d_type = tmp->data.d_type;
+			dstdata->d_version = tmp->data.d_version;
 			dstdata->d_buf = tmp->data.buffer;
 			dstdata->d_off = tmp->data.from + tmp->data.data_shift;
 			dstdata->d_size = tmp->data.to - tmp->data.from;
