@@ -1047,40 +1047,46 @@ int main(int argc, char **argv) {
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
 			// TODO: find und get in eine Funktion zusammenfassen? find einen Chain* zurückgeben lassen?
-			size_t index = find(&section_ranges[i], srcdata_begin);
-			Chain *tmp = get(&section_ranges[i], index);
-			// XXX: Debug
-			if (tmp == NULL) {
-				// zero elements to process
-				printf("Zero elements to process");
-			}
-			size_t data_size = 0;
-			while (tmp->data.to <= srcdata_end) {
-				// range is in srcdata->d_buf
-				data_size = tmp->data.to - tmp->data.from;
-				memcpy(tmp->data.buffer, srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
+			for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
+				if (tmp->data.to <= srcdata_begin) {
+					// source data begins after range ends
+					continue;
+				}
+
+				if (srcdata_end <= tmp->data.from) {
+					// source data ends before range begins
+					continue;
+				}
+
+				unsigned long long srcstart = 0;
+				unsigned long long srcend = 0;
+				unsigned long long dststart = 0;
+				if (tmp->data.from <= srcdata_begin) {
+					// range starts before source data starts
+					srcstart = 0;
+					dststart = srcdata_begin - tmp->data.from;
+				}
+				else {
+					// range starts after source data starts
+					srcstart = tmp->data.from - srcdata_begin;
+					dststart = 0;
+				}
+
+				if (tmp->data.to >= srcdata_end) {
+					// range ends after source data ends
+					srcend = srcdata_end;
+				}
+				else {
+					// range ends before source data ends
+					srcend = tmp->data.to;
+				}
+
+				memcpy(tmp->data.buffer + dststart, srcdata->d_buf + srcstart, srcend - srcstart);
 				tmp->data.d_version = srcdata->d_version;
 				tmp->data.d_type = srcdata->d_type;
-				// advance to next range, while condition checks if that range is still in srcdata->d_buf
-				tmp = tmp->next;
-				index++;
-				if (tmp == NULL) {
-					// reached end of list
-					goto new_data;
-				}
-			}
-
-			if (tmp->data.from < srcdata_end) {
-				// beginning of range is in srcdata->d_buf, end of range is not
-				// maybe this will not happen at all, but libelf does not guarantee that
-				data_size = srcdata_end - tmp->data.from;
-				memcpy(tmp->data.buffer, srcdata->d_buf + tmp->data.from - srcdata_begin, data_size);
-				// FIXME: offset in destination buffer
 			}
 		}
 
-new_data:
-		;
 		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
