@@ -20,9 +20,14 @@
 const char *FILESUFFIX = ".shrinked";
 
 /*
- * Contains start and end of range to keep based on addresses in the file.
- * section_offset is the offset of the section in the original file, from and to are adresses based on section_offset.
- * FIXME: shift, buffer, d_type, d_version kommentieren
+ * Description of data range to keep using file layout.
+ *
+ * section_offset, section_align: offset and alignment of containing section
+ * from, to: start and end (exclusive) of range based on start of containing section
+ * section_shift: shift of containing section in new file; negative values mean a shift toward address 0
+ * data_shift: shift of range inside of containing section; negative values mean a shift towards start of section
+ * buffer: buffer for data described by this struct
+ * d_type, d_version: values of corresponding members of Elf_Data library struct
  */
 typedef struct range{
 	unsigned long long from;
@@ -36,7 +41,13 @@ typedef struct range{
 	unsigned int d_version;
 } Range;
 
-// FIXME: comment
+/*
+ * Information about memory layout
+ *
+ * loadable: flag if range is part of a LOAD segment
+ * flags, align: flags and alignment of containing segment
+ * from, to: start and end of range in memory as virtual addresses
+ */
 struct address_space_info{
 	int loadable;
 	unsigned long long flags;
@@ -47,7 +58,9 @@ struct address_space_info{
 
 struct chain;
 
-// FIXME: comment
+/*
+ * List of data ranges and associated address space description
+ */
 typedef struct chain{
 	Range data;
 	struct chain *next;
@@ -76,8 +89,10 @@ struct relocation_infos{
 };
 
 /*
- * FIXME: korrigieren
- * Description of the PHDR table in the new file with its start address and number of entries.
+ * Description of the new file layout
+ *
+ * phdr_start, phdr_entries: start address and number of entries of new PHDR table
+ * shdr_start: start address of new SHDR table
  */
 struct layoutDescription {
 	unsigned long long phdr_start;
@@ -94,8 +109,9 @@ struct layoutDescription {
 Chain *get(Chain *start, unsigned int index) {
 	Chain *tmp = start;
 	while (index > 0) {
-		if (tmp == NULL)
+		if (tmp == NULL) {
 			return NULL;
+		}
 		tmp = tmp->next;
 		index--;
 	}
@@ -108,10 +124,11 @@ Chain *get(Chain *start, unsigned int index) {
  */
 int insert(Chain *start, Chain *elem) {
 	if (elem->data.from < start->data.from) {
-		// elem is new head
-		if (elem->data.to > start->data.from)
-			//ranges overlap
+		/* elem is new head */
+		if (elem->data.to > start->data.from) {
+			/* ranges overlap */
 			return -1;
+		}
 
 		Range tmp;
 		tmp.from = elem->data.from;
@@ -149,19 +166,21 @@ int insert(Chain *start, Chain *elem) {
 		start->as.to = tmp_info.to;
 	}
 	else {
-		// between this two elements elem needs to be inserted
+		/* between this two elements elem needs to be inserted */
 		Chain *ahead = start->next;
 		Chain *following = start;
 		while (ahead != NULL && elem->data.from > ahead->data.from) {
 			following = ahead;
 			ahead = ahead->next;
 		}
-		if (following->data.to > elem->data.from)
-			// ranges overlap
+		if (following->data.to > elem->data.from) {
+			/* ranges overlap */
 			return -1;
-		if (ahead != NULL && elem->data.to > ahead->data.from)
-			// ranges overlap
+		}
+		if (ahead != NULL && elem->data.to > ahead->data.from) {
+			/* ranges overlap */
 			return -1;
+		}
 
 		following->next = elem;
 		elem->next = ahead;
@@ -192,22 +211,13 @@ void deleteList(Chain *start) {
  * Size of list start.
  */
 size_t size(Chain *start) {
-	if (start->data.to == 0)
-		// no elements in list
+	if (start->data.to == 0) {
+		/* no elements in list */
 		return 0;
+	}
 
 	size_t ret = 1;
 	while (start->next != NULL) {
-		ret++;
-		start = start->next;
-	}
-	return ret;
-}
-
-// FIXME: comment
-size_t find (Chain *start, unsigned long long from) {
-	size_t ret = 0;
-	while (start->data.from < from) {
 		ret++;
 		start = start->next;
 	}
@@ -256,7 +266,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			goto err_free_srcphdr2;
 		}
 
-		// FIXME: comment
+		/* split ranges in section ranges and add layout data */
 		while (current && current->data.to <= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
@@ -266,50 +276,63 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 			tmp->next = NULL;
 
+			/* determine start and end addresses of section range in file */
 			if (srcshdr->sh_type == SHT_NOBITS) {
 				tmp->data.from = 0;
 				tmp->data.to = 0;
 			}
 			else {
-				if (current->data.from < srcshdr->sh_offset)
+				if (current->data.from < srcshdr->sh_offset) {
 					tmp->data.from = 0;
-				else
+				}
+				else {
 					tmp->data.from = current->data.from - srcshdr->sh_offset;
+				}
 
-				if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size)
+				if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size) {
 					tmp->data.to = current->data.to - srcshdr->sh_offset;
-				else
+				}
+				else {
 					tmp->data.to = srcshdr->sh_size;
+				}
 			}
-			// Alignment im Testfall
-			if (srcshdr->sh_addralign != 65536)
+
+			// FIXME: Alignment im Testfall
+			if (srcshdr->sh_addralign != 65536) {
 				tmp->data.section_align = srcshdr->sh_addralign;
+			}
 			else {
 				tmp->data.section_align = 16;
 			}
 			tmp->data.section_offset = srcshdr->sh_offset;
 
+			/* memory layout of section range */
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
 					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 					goto err_free_srcphdr2;
 				}
 
-				// not a loadable segment
-				if (srcphdr->p_type != PT_LOAD)
+				if (srcphdr->p_type != PT_LOAD) {
+					/* not a loadable segment */
 					continue;
+				}
 
-				// loadable segment but does not load this section
-				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset)
+				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset) {
+					/* loadable segment but does not load this section */
 					continue;
+				}
 
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				if (srcphdr->p_offset <= srcshdr->sh_offset)
+				/* determine start and end addresses of section range in memory */
+				if (srcphdr->p_offset <= srcshdr->sh_offset) {
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
-				else
+				}
+				else {
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+				}
 				if (srcshdr->sh_type == SHT_NOBITS) {
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
@@ -331,11 +354,13 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				dest[i].as.align = tmp->as.align;
 				free(tmp);
 			}
-			else
+			else {
 				insert(&dest[i], tmp);
+			}
 			current = current->next;
 		}
 
+		/* split ranges in section ranges and add layout data - edge case */
 		if (current && current->data.from < srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
@@ -345,46 +370,57 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 			tmp->next = NULL;
 
+			/* determine start and end addresses of section range in file */
 			if (srcshdr->sh_type == SHT_NOBITS) {
 				tmp->data.from = 0;
 				tmp->data.to = 0;
 			}
 			else {
-				if (current->data.from < srcshdr->sh_offset)
+				if (current->data.from < srcshdr->sh_offset) {
 					tmp->data.from = 0;
-				else
+				}
+				else {
 					tmp->data.from = current->data.from - srcshdr->sh_offset;
+				}
 				tmp->data.to = srcshdr->sh_size;
 			}
+
 			// FIXME: Alignment im Testfall
-			if (srcshdr->sh_addralign != 65536)
+			if (srcshdr->sh_addralign != 65536) {
 				tmp->data.section_align = srcshdr->sh_addralign;
+			}
 			else {
 				tmp->data.section_align = 16;
 			}
 			tmp->data.section_offset = srcshdr->sh_offset;
 
+			/* memory layout of section range */
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
 					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 					goto err_free_srcphdr2;
 				}
 
-				// not a loadable segment
-				if (srcphdr->p_type != PT_LOAD)
+				if (srcphdr->p_type != PT_LOAD) {
+					/* not a loadable segment */
 					continue;
+				}
 
-				// loadable segment but does not load this section
-				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset)
+				if (srcphdr->p_offset >= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size) || srcphdr->p_offset + (srcshdr->sh_type == SHT_NOBITS ? srcphdr->p_memsz : srcphdr->p_filesz) <= srcshdr->sh_offset) {
+					/* loadable segment but does not load this section */
 					continue;
+				}
 
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				if (srcphdr->p_offset <= srcshdr->sh_offset)
+				/* determine start and end addresses of section range in memory */
+				if (srcphdr->p_offset <= srcshdr->sh_offset) {
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
-				else
+				}
+				else {
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+				}
 				if (srcshdr->sh_type == SHT_NOBITS) {
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
@@ -406,8 +442,9 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				dest[i].as.align = tmp->as.align;
 				free(tmp);
 			}
-			else
+			else {
 				insert(&dest[i], tmp);
+			}
 		}
 	}
 	free(srcphdr);
@@ -421,16 +458,19 @@ err_free_srcshdr2:
 	return -1;
 }
 
-// FIXME: comment
-size_t calculateCeil(size_t value, size_t base) {
+/*
+ * Rounds up value to the next multiple of base.
+ */
+size_t roundUp(size_t value, size_t base) {
 	size_t tmp = value % base;
-	if (tmp != 0)
+	if (tmp != 0) {
 		return value - tmp + base;
-	else
+	}
+	else {
 		return value;
+	}
 }
 
-// FIXME: comment
 size_t calculateOffsetInPage(size_t addr) {
 	return addr % PAGESIZE;
 }
@@ -442,7 +482,8 @@ size_t calculateOffsetInPage(size_t addr) {
 int countLOADs(Elf *elf) {
 	int count = 0;
 
-	size_t phdrnum = 0;		// number of segments in file
+	// number of segments in file
+	size_t phdrnum = 0;
 	if (elf_getphdrnum(elf, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		return -1;
@@ -469,7 +510,7 @@ int countLOADs(Elf *elf) {
 }
 
 /*
- * Counts loadable ranges headers.
+ * Counts loadable ranges.
  */
 int countLoadableRanges(Chain *ranges, size_t size) {
 	int count = 0;
@@ -477,8 +518,9 @@ int countLoadableRanges(Chain *ranges, size_t size) {
 	for (size_t i = 0; i < size; i++) {
 		Chain *tmp = &ranges[i];
 		while (tmp) {
-			if (tmp->as.loadable)
+			if (tmp->as.loadable) {
 				count++;
+			}
 			tmp = tmp->next;
 		}
 	}
@@ -486,11 +528,11 @@ int countLoadableRanges(Chain *ranges, size_t size) {
 }
 
 /*
- * FIXME: korrigieren
- * Calculates offset of a structure in its containing structure (section/file or
- * data block/section). priorOffset is the offset of that structure in the original file,
- * occupiedSpace points to the first free byte in the containing structure where that structure
- * is appended.
+ * Calculates offset of a section in new file.
+ *
+ * priorOffset: offset of section in original file
+ * occupiedSpace: number of already occupied bytes in new file
+ *
  * Contraint: new offset needs to be equal prior offset modulo page size because LOAD segments
  * require that p_offset (offset in file) is equal p_vaddr (address in virtual address space)
  * modulo page size.
@@ -526,9 +568,11 @@ static int cmp (const void *p1, const void *p2) {
 }
 
 /*
- * FIXME: comment
+ * Calculates the new file layout.
+ *
+ * ranges, size: list of ranges in the new file
  * oldEntries: number of PHDR entries of original file that are NOT LOADs
- * fileheader: size of ELF file header
+ * elflass: Elf Class (32bit or 64bit)
  */
 struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass) {
 	errno = 0;
@@ -548,20 +592,22 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	else {
 		current_size = sizeof(Elf64_Ehdr);
 	}
-	// ignore section 0
+	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
 		unsigned long long phdr_start = 0;
 		unsigned long long phdr_size = 0;
 		if (elfclass == ELFCLASS32) {
-			phdr_start = calculateCeil(current_size, sizeof(Elf32_Phdr));
+			phdr_start = roundUp(current_size, sizeof(Elf32_Phdr));
 			phdr_size = (loads + oldEntries) * sizeof(Elf32_Phdr);
 		}
 		else {
-			phdr_start = calculateCeil(current_size, sizeof(Elf64_Phdr));
+			phdr_start = roundUp(current_size, sizeof(Elf64_Phdr));
 			phdr_size = (loads + oldEntries) * sizeof(Elf64_Phdr);
 		}
 
 		Chain *tmp = &ranges[i];
+		/* insert phdr if possible */
+		// FIXME: check memeory layout
 		if (phdr_not_inserted && tmp->data.section_offset >= (phdr_start + phdr_size)) {
 			phdr_not_inserted = FALSE;
 			current_size = phdr_start + phdr_size;
@@ -576,11 +622,28 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 			current_size = tmp->data.section_offset + tmp->data.to + tmp->data.section_shift + tmp->data.data_shift;
 		}
 	}
+
+	/* insert phdr if not already done */
+	// FIXME: check memeory layout
+	if (phdr_not_inserted) {
+		size_t entry_size = 0;
+		if (elfclass == ELFCLASS32) {
+			ret->phdr_start = roundUp(current_size, sizeof(Elf32_Phdr));
+			entry_size = sizeof(Elf32_Phdr);
+		}
+		else {
+			ret->phdr_start = roundUp(current_size, sizeof(Elf64_Phdr));
+			entry_size = sizeof(Elf64_Phdr);
+		}
+		ret->phdr_entries = loads + oldEntries;
+		current_size = ret->phdr_start + ret->phdr_entries * entry_size;
+	}
+
 	if (elfclass == ELFCLASS32) {
-		ret->shdr_start = calculateCeil(current_size, sizeof(Elf32_Shdr));
+		ret->shdr_start = roundUp(current_size, sizeof(Elf32_Shdr));
 	}
 	else {
-		ret->shdr_start = calculateCeil(current_size, sizeof(Elf64_Shdr));
+		ret->shdr_start = roundUp(current_size, sizeof(Elf64_Shdr));
 	}
 	return ret;
 }
@@ -601,22 +664,23 @@ unsigned long long calculateSectionSize(Chain *section) {
 
 
 
-// FIXME: comment
 int main(int argc, char **argv) {
 	Chain *ranges = NULL;
 
+//---------------------------------------------------------------------------//
+// Command line argument processing                                          //
+//---------------------------------------------------------------------------//
 	int opt;
 	while ((opt = getopt(argc, argv, "hk:")) != -1) {
 		switch (opt) {
 			case 'k':
-				// you can't have a label on a declaration
-				// because of it's C
+				/* you can't have a label on a declaration because of it's C */
 				;
 				char *split = strpbrk(optarg, ":-");
 				if (split == NULL) {
 					error(0, 0, "Invalid range argument '%s' - ignoring!", optarg);
-				} else {
-					// FIXME: comment
+				}
+				else {
 					errno = 0;
 					Chain *tmp = calloc(1, sizeof(Chain));
 					if (tmp == NULL) {
@@ -628,26 +692,32 @@ int main(int argc, char **argv) {
 					char *from = NULL;
 					errno = 0;
 					tmp->data.from = strtoull(optarg, &from, 0);
-					if (tmp->data.from == ULLONG_MAX && errno != 0)
+					if (tmp->data.from == ULLONG_MAX && errno != 0) {
 						error(0, errno, "First part of range argument '%s' not parsable - ignoring!", optarg);
+					}
 					char *to = NULL;
 					errno = 0;
 					tmp->data.to = strtoull(split + 1, &to, 0);
-					if (tmp->data.to == ULLONG_MAX && errno != 0)
+					if (tmp->data.to == ULLONG_MAX && errno != 0) {
 						error(0, errno, "Second part of range argument '%s' not parsable - ignoring!", optarg);
+					}
 					if ((tmp->data.from == 0 && from == optarg) || (tmp->data.to == 0 && to == split + 1) || errno != 0 || from != split || *to != '\0') {
 						error(0, 0, "Range argument '%s' not parsable - ignoring!", optarg);
-					} else {
+					}
+					else {
 						if (*split == ':') {
 							tmp->data.to += tmp->data.from;
 						}
 						if (tmp->data.to <= tmp->data.from) {
 							error(0, 0, "Invalid range '%s' - ignoring!", optarg);
-						} else {
-							if (ranges == NULL)
+						}
+						else {
+							if (ranges == NULL) {
 								ranges = tmp;
-							else
+							}
+							else {
 								insert(ranges, tmp);
+							}
 						}
 					}
 				}
@@ -675,19 +745,24 @@ int main(int argc, char **argv) {
 
 	char *filename = argv[optind];
 
-	// libelf-library won't work if you don't tell it the ELF version
+//---------------------------------------------------------------------------//
+// Setup                                                                     //
+//---------------------------------------------------------------------------//
+	/* libelf-library won't work if you don't tell it the ELF version */
 	if (elf_version(EV_CURRENT) == EV_NONE) {
 		error(0, 0, "ELF library initialization failed: %s", elf_errmsg(-1));
 		goto err_free_ranges;
 	}
 
-	int srcfd;	// file descriptor of source file
+	// file descriptor of source file
+	int srcfd;
 	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0) {
 		error(0, errno, "unable to open %s", filename);
 		goto err_free_ranges;
 	}
-	Elf *srce;	// ELF representation of source file
+	// ELF representation of source file
+	Elf *srce;
 	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
 		error(0, 0, "could not retrieve ELF structures from source file: %s", elf_errmsg(-1));
 		goto err_free_srcfd;
@@ -708,19 +783,21 @@ int main(int argc, char **argv) {
 	strncpy(dstfname, filename, strlen(filename));
 	strncat(dstfname, FILESUFFIX, strlen(FILESUFFIX));
 
-	int dstfd;	// file descriptor of new file
+	// file descriptor of new file
+	int dstfd;
 	errno = 0;
 	if ((dstfd = open(dstfname, O_WRONLY | O_CREAT, 0777)) < 0) {
 		error(0, errno, "unable to open %s", dstfname);
 		goto err_free_dstfname;
 	}
-	Elf *dste;	// ELF representation of new file
+	// ELF representation of new file
+	Elf *dste;
 	if ((dste = elf_begin(dstfd, ELF_C_WRITE, NULL)) == NULL) {
 		error(0, 0, "could not create ELF structures for new file: %s", elf_errmsg(-1));
 		goto err_free_dstfd;
 	}
 
-	// tell lib that the application will take care of the exact file layout
+	/* tell lib that the application will take care of the exact file layout */
 	if (elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT) == 0) {
 		error(0, 0, "elf_flagelf() failed: %s.", elf_errmsg(-1));
 		goto err_free_dste;
@@ -729,10 +806,11 @@ int main(int argc, char **argv) {
 	// XXX: Debug
 	elf_fill(0xaa);
 
-//-----------------------------------------------------------------------------
-// Copy executable header
-//-----------------------------------------------------------------------------
-	int elfclass;		// ELF class of source file
+//---------------------------------------------------------------------------//
+// Copy executable header                                                    //
+//---------------------------------------------------------------------------//
+	// ELF class of source file
+	int elfclass;
 	if ((elfclass = gelf_getclass(srce)) == ELFCLASSNONE) {
 		error(0, 0, "could not retrieve ELF class from source file");
 		goto err_free_dste;
@@ -771,9 +849,6 @@ int main(int argc, char **argv) {
 	dstehdr->e_machine = srcehdr->e_machine;
 	dstehdr->e_type = srcehdr->e_type;
 	dstehdr->e_flags = srcehdr->e_flags;
-	// fall back if these attributes are not adjusted later
-	dstehdr->e_shoff = srcehdr->e_shoff;
-	dstehdr->e_phoff = srcehdr->e_phoff;
 	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
 	dstehdr->e_entry = srcehdr->e_entry;
 	if (gelf_update_ehdr(dste, dstehdr) == 0) {
@@ -781,16 +856,17 @@ int main(int argc, char **argv) {
 		goto err_free_srcehdr;
 	}
 
-	// FIXME: comments
-//-----------------------------------------------------------------------------
-// Copy program headers
-//-----------------------------------------------------------------------------
-	size_t scnnum = 0;		// number of sections in source file
+//---------------------------------------------------------------------------//
+// Copy program headers                                                      //
+//---------------------------------------------------------------------------//
+	// number of sections in source file
+	size_t scnnum = 0;
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
 		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
 	errno = 0;
+	// ranges to keep per section
 	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
 	if (section_ranges == NULL) {
 		error(0, errno, "unable to allocate memory");
@@ -802,44 +878,54 @@ int main(int argc, char **argv) {
 	deleteList(ranges);
 	ranges = NULL;
 
-	size_t phdrnum = 0;		// number of segments in source file
+	// number of segments in source file
+	size_t phdrnum = 0;
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		goto err_free_section_ranges;
 	}
+	// FIXME: näher an for-Schleife
 	errno = 0;
+	// current PHDR entry of source file
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
 		goto err_free_section_ranges;
 	}
 
+	// number of LOAD segments in source file
 	int loads = countLOADs(srce);
-	if (loads == -1)
+	if (loads == -1) {
 		goto err_free_srcphdr;
-	// new phdrnum = old #segments - old #loads + #ranges to load + LOAD for EHDR&PHDR
+	}
+	// description of layout of new file
 	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
 	if (desc == NULL) {
 		goto err_free_srcphdr;
 	}
+	// PHDR table of new file
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, desc->phdr_entries);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
 		goto err_free_desc;
 	}
 
+	// index of current PHDR entry in new file
 	size_t new_index = 0;
-	int first_load = FALSE;
+	// FIXME: comments
+	int first_load = TRUE;
 	errno = 0;
 	struct relocation_infos *relinfos = calloc(1, sizeof(struct relocation_infos));
 	if (relinfos == NULL) {
 		error(0, errno, "ran out of memory");
 		goto err_free_desc;
 	}
+	// data of PDHR segment
 	unsigned long long phdr_vaddr = 0;
 	unsigned long long phdr_paddr = 0;
 	unsigned long long phdr_offset = 0;
 	unsigned long long phdr_filesz = 0;
+	/* construct new PHDR table from old PHDR table */
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
@@ -847,6 +933,7 @@ int main(int argc, char **argv) {
 		}
 
 		if (srcphdr->p_type != PT_LOAD) {
+			/* adopt values of non-LOAD segments to fix them up later */
 			dstphdrs[new_index].p_type = srcphdr->p_type;
 			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
@@ -857,13 +944,11 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_align = srcphdr->p_align;
 			new_index++;
 		}
-		else if (first_load)
-			continue;
-		else {
-			// FIXME: Sicherstellen, dass PHDR nicht mitten ins Textsegment geladen wird
-			first_load = TRUE;
+		else if (first_load) {
+			/* replace first LOAD segment with all LOAD segments of new file */
+			first_load = FALSE;
 
-			// LOAD segment for EHDR
+			/* LOAD segment for EHDR */
 			dstphdrs[new_index].p_type = PT_LOAD;
 			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
@@ -884,6 +969,7 @@ int main(int argc, char **argv) {
 			relinfos->info.shift = 0;
 			new_index++;
 
+			/* insert LOAD segments for sections */
 			for (size_t i = 0; i < scnnum; i++) {
 				Chain *tmp = &section_ranges[i];
 				while (tmp) {
@@ -928,7 +1014,7 @@ int main(int argc, char **argv) {
 					tmp = tmp->next;
 				}
 			}
-			// LOAD segment for PHDR
+			/* LOAD segment for PHDR */
 			dstphdrs[new_index].p_type = PT_LOAD;
 			dstehdr->e_phoff = desc->phdr_start;
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
@@ -960,10 +1046,16 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_align = PAGESIZE;
 
 			new_index++;
+			/* sort LOAD segments by their virtual address - required by ELF standard */
 			qsort(&dstphdrs[i], new_index - i, sizeof(GElf_Phdr), &cmp);
+		}
+		else {
+			/* skip all other LOAD segments */
+			continue;
 		}
 	}
 
+	/* fix up non-LOAD segments */
 	for (size_t i = 0; i < desc->phdr_entries; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
 			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
@@ -973,6 +1065,7 @@ int main(int argc, char **argv) {
 				}
 			}
 			if (dstphdrs[i].p_type == PT_PHDR) {
+				/* fixup PHDR segment */
 				dstphdrs[i].p_paddr = phdr_paddr;
 				dstphdrs[i].p_vaddr = phdr_vaddr;
 				dstphdrs[i].p_offset = phdr_offset;
@@ -984,27 +1077,27 @@ int main(int argc, char **argv) {
 	freeRelocs(relinfos);
 	relinfos = NULL;
 
-	// FIXME: comments!
-//-----------------------------------------------------------------------------
-// Copy sections and section headers
-//-----------------------------------------------------------------------------
+//---------------------------------------------------------------------------//
+// Copy sections and section headers                                         //
+//---------------------------------------------------------------------------//
 	errno = 0;
-	// storage for current section header of source file
+	// current section header of source file
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		goto err_free_relinfos;
 	}
 	errno = 0;
-	// storage for current section header of new file
+	// current section header of new file
 	GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
 		error(0, errno, "unable to allocate memory for new shdr structure");
 		goto err_free_srcshdr;
 	}
-	Elf_Scn *srcscn = NULL;		// current section of source file
 
-	// lib creates section 0 automatically so we start with section 1
+	// current section of source file
+	Elf_Scn *srcscn = NULL;
+	/* lib creates section 0 automatically so we start with section 1 */
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL) {
@@ -1026,7 +1119,7 @@ int main(int argc, char **argv) {
 			goto err_free_dstshdr;
 		}
 
-		// FIXME: comment
+		/* allocate buffers for the data of the new file */
 		for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 			errno = 0;
 			tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
@@ -1038,46 +1131,45 @@ int main(int argc, char **argv) {
 
 		// current data of current section of source file
 		Elf_Data *srcdata = NULL;
+		/* copy data in data buffers for new file */
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
 			if (srcdata->d_buf == NULL) {
-				// section is NOBITS section => no data to copy
+				/* section is NOBITS section => no data to copy */
 				continue;
 			}
-			// FIXME: databuffer contains only a part of range to keep
 			size_t srcdata_begin = srcdata->d_off;
 			size_t srcdata_end = srcdata->d_off + srcdata->d_size;
-			// TODO: find und get in eine Funktion zusammenfassen? find einen Chain* zurückgeben lassen?
 			for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 				if (tmp->data.to <= srcdata_begin) {
-					// source data begins after range ends
+					/* source data begins after range ends */
 					continue;
 				}
 
 				if (srcdata_end <= tmp->data.from) {
-					// source data ends before range begins
-					continue;
+					/* source data ends before range (and the following range because the list is sorted) begins */
+					break;
 				}
 
 				unsigned long long srcstart = 0;
 				unsigned long long srcend = 0;
 				unsigned long long dststart = 0;
 				if (tmp->data.from <= srcdata_begin) {
-					// range starts before source data starts
+					/* range starts before source data starts */
 					srcstart = 0;
 					dststart = srcdata_begin - tmp->data.from;
 				}
 				else {
-					// range starts after source data starts
+					/* range starts after source data starts */
 					srcstart = tmp->data.from - srcdata_begin;
 					dststart = 0;
 				}
 
 				if (tmp->data.to >= srcdata_end) {
-					// range ends after source data ends
+					/* range ends after source data ends */
 					srcend = srcdata_end;
 				}
 				else {
-					// range ends before source data ends
+					/* range ends before source data ends */
 					srcend = tmp->data.to;
 				}
 
@@ -1087,16 +1179,15 @@ int main(int argc, char **argv) {
 			}
 		}
 
-		for (size_t j = 0; j < size(&section_ranges[i]); j++) {
+		/* construct data descriptors of current section */
+		for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
 				error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
 				goto err_free_dstshdr;
 			}
 
-			Chain *tmp = get(&section_ranges[i], j);
-			// FIXME: comment
-			// FIXME: früher prüfen?
+			// FIXME: früher prüfen! In computeSectionRanges verschieben?
 			if (tmp->data.from % tmp->data.section_align != 0) {
 				error(0, 0, "in section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->data.section_align, tmp->data.from, tmp->data.section_align);
 				goto err_free_dstshdr;
@@ -1114,17 +1205,20 @@ int main(int argc, char **argv) {
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
-		// FIXME: comment
 		// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
-		if (srcshdr->sh_addralign == 65536)
+		if (srcshdr->sh_addralign == 65536) {
 			dstshdr->sh_addralign = 16;
-		else
+		}
+		else {
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
+		}
 		dstshdr->sh_offset = srcshdr->sh_offset + section_ranges[i].data.section_shift;
-		if (srcshdr->sh_type == SHT_NOBITS)
+		if (srcshdr->sh_type == SHT_NOBITS) {
 			dstshdr->sh_size = srcshdr->sh_size;
-		else
+		}
+		else {
 			dstshdr->sh_size = calculateSectionSize(&section_ranges[i]);
+		}
 		dstshdr->sh_entsize = srcshdr->sh_entsize;
 		dstshdr->sh_link = srcshdr->sh_link;
 
@@ -1136,12 +1230,13 @@ int main(int argc, char **argv) {
 
 	dstehdr->e_shoff = desc->shdr_start;
 
+	/* write new ELF file */
 	if (elf_update(dste, ELF_C_WRITE) == -1) {
 		error(0, 0, "could not update ELF structures: %s", elf_errmsg(-1));
 		goto err_free_dstshdr;
 	}
 
-	// tidy up
+	/* tidy up */
 	free(dstshdr);
 	free(srcshdr);
 	free(desc);
@@ -1165,8 +1260,9 @@ int main(int argc, char **argv) {
 	free(dstfname);
 	elf_end(srce);
 	errno = 0;
-	if (close(srcfd) < 0)
+	if (close(srcfd) < 0) {
 		error(EXIT_FAILURE, errno, "unable to close %s", filename);
+	}
 
 	return 0;
 
@@ -1198,18 +1294,21 @@ err_free_dste:
 	elf_end(dste);
 err_free_dstfd:
 	errno = 0;
-	if (close(dstfd) < 0)
+	if (close(dstfd) < 0) {
 		error(0, errno, "unable to close %s", dstfname);
+	}
 err_free_dstfname:
 	free(dstfname);
 err_free_srce:
 	elf_end(srce);
 err_free_srcfd:
 	errno = 0;
-	if (close(srcfd) < 0)
+	if (close(srcfd) < 0) {
 		error(0, errno, "unable to close %s", filename);
+	}
 err_free_ranges:
-	if (ranges != NULL)
+	if (ranges != NULL) {
 		deleteList(ranges);
+	}
 	exit(EXIT_FAILURE);
 }
