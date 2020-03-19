@@ -66,27 +66,6 @@ typedef struct chain{
 } Chain;
 
 /*
- * Contains information about the location of data in the new file.
- * start is the address of that data in the original file
- * size is the size of that data in byte
- * shift is the difference between the new and the old address of that data
- *
- * more formal:
- * The data of the original file in range [start, start + size) resides in range
- * [start - shift, start + size - shift) in the new file.
- */
-struct relocation_info{
-	unsigned long long start;
-	size_t size;
-	signed long long shift;
-};
-
-struct relocation_infos{
-	struct relocation_infos *next;
-	struct relocation_info info;
-};
-
-/*
  * Range that will be loaded. Combines multiple ranges given via command line if needed.
  * offset, fsize: offset and size in the original file
  * vaddr, msize: virtual start address and size in memory
@@ -548,18 +527,6 @@ size_t calculateOffset(size_t priorOffset, size_t occupiedSpace) {
 	}
 	else {
 		return occupiedSpace - occupiedPageOffset + priorPageOffset + PAGESIZE;
-	}
-}
-
-/*
- * Frees a list of relocation information.
- */
-void freeRelocs(struct relocation_infos *start) {
-	struct relocation_infos *tmp;
-	while (start != NULL) {
-		tmp = start->next;
-		free(start);
-		start = tmp;
 	}
 }
 
@@ -1045,12 +1012,6 @@ int main(int argc, char **argv) {
 	size_t new_index = 0;
 	// FIXME: comments
 	int first_load = TRUE;
-	errno = 0;
-	struct relocation_infos *relinfos = calloc(1, sizeof(struct relocation_infos));
-	if (relinfos == NULL) {
-		error(0, errno, "ran out of memory");
-		goto err_free_desc;
-	}
 	// data of PDHR segment
 	unsigned long long phdr_vaddr = 0;
 	unsigned long long phdr_paddr = 0;
@@ -1060,7 +1021,7 @@ int main(int argc, char **argv) {
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
-			goto err_free_relinfos;
+			goto err_free_desc;
 		}
 
 		if (srcphdr->p_type != PT_LOAD) {
@@ -1095,9 +1056,6 @@ int main(int argc, char **argv) {
 			dstphdrs[new_index].p_flags = PF_X | PF_R;
 			dstphdrs[new_index].p_align = PAGESIZE;
 
-			relinfos->info.start = dstphdrs[new_index].p_offset;
-			relinfos->info.size = dstphdrs[new_index].p_filesz;
-			relinfos->info.shift = 0;
 			new_index++;
 
 			/* insert LOAD segments for sections */
@@ -1114,32 +1072,6 @@ int main(int argc, char **argv) {
 						dstphdrs[new_index].p_flags = tmp->as.flags;
 						dstphdrs[new_index].p_align = PAGESIZE;
 
-						if (relinfos->info.start + relinfos->info.size == tmp->data.section_offset + tmp->data.from && relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)relinfos->info.start){
-							relinfos->info.size += dstphdrs[new_index].p_filesz;
-						}
-						else {
-							struct relocation_infos *second_tmp_relinfos = relinfos;
-							struct relocation_infos *tmp_relinfos = relinfos->next;
-							while(tmp_relinfos != NULL){
-								if (tmp_relinfos->info.start + tmp_relinfos->info.size == tmp->data.section_offset + tmp->data.from && tmp_relinfos->info.shift == (signed long long)dstphdrs[new_index].p_offset - (signed long long)tmp_relinfos->info.start - (signed long long)tmp_relinfos->info.size){
-									tmp_relinfos->info.size += dstphdrs[new_index].p_filesz;
-									break;
-								}
-								second_tmp_relinfos = tmp_relinfos;
-								tmp_relinfos = tmp_relinfos->next;
-							}
-							if(tmp_relinfos == NULL) {
-								errno = 0;
-								second_tmp_relinfos->next = calloc(1, sizeof(struct relocation_infos));
-								if(second_tmp_relinfos->next == NULL) {
-									error(0, errno, "ran out of memory");
-									goto err_free_relinfos;
-								}
-								second_tmp_relinfos->next->info.start = tmp->data.section_offset + tmp->data.from;
-								second_tmp_relinfos->next->info.size = dstphdrs[new_index].p_filesz;
-								second_tmp_relinfos->next->info.shift = (unsigned long long)second_tmp_relinfos->next->info.start - (unsigned long long)dstphdrs[new_index].p_offset;
-							}
-						}
 						new_index++;
 					}
 					tmp = tmp->next;
@@ -1189,12 +1121,17 @@ int main(int argc, char **argv) {
 	/* fix up non-LOAD segments */
 	for (size_t i = 0; i < desc->phdr_entries; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
-			for (struct relocation_infos *tmp = relinfos; tmp != NULL; tmp = tmp->next) {
-				if (tmp->info.start <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->info.start + tmp->info.size) {
-					dstphdrs[i].p_offset -= tmp->info.shift;
-					break;
+			for (size_t j = 0; j < desc->segmentNum; j++) {
+				for (struct segmentRanges *tmp = desc->segments[j]; tmp; tmp = tmp->next) {
+					// if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset + dstphdrs[i].p_filesz <= tmp->range.offset + tmp->range.fsize) {
+					/* ^ won't work because of segments containing more than one section */
+					if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->range.offset + tmp->range.fsize) {
+						dstphdrs[i].p_offset += tmp->range.shift;
+						goto fixed;
+					}
 				}
 			}
+fixed:
 			if (dstphdrs[i].p_type == PT_PHDR) {
 				/* fixup PHDR segment */
 				dstphdrs[i].p_paddr = phdr_paddr;
@@ -1205,8 +1142,6 @@ int main(int argc, char **argv) {
 			}
 		}
 	}
-	freeRelocs(relinfos);
-	relinfos = NULL;
 
 //---------------------------------------------------------------------------//
 // Copy sections and section headers                                         //
@@ -1216,7 +1151,7 @@ int main(int argc, char **argv) {
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
-		goto err_free_relinfos;
+		goto err_free_desc;
 	}
 	errno = 0;
 	// current section header of new file
@@ -1401,10 +1336,6 @@ err_free_dstshdr:
 	free(dstshdr);
 err_free_srcshdr:
 	free(srcshdr);
-err_free_relinfos:
-	if (relinfos != NULL) {
-		freeRelocs(relinfos);
-	}
 err_free_desc:
 	deleteDesc(desc);
 err_free_srcphdr:
