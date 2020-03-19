@@ -56,8 +56,6 @@ struct address_space_info{
 	unsigned long long to;
 };
 
-struct chain;
-
 /*
  * List of data ranges and associated address space description
  */
@@ -101,22 +99,6 @@ struct layoutDescription {
 };
 
 
-
-/*
- * Get element from list by index.
- * Returns NULL if there is no entry with correspondig index.
- */
-Chain *get(Chain *start, unsigned int index) {
-	Chain *tmp = start;
-	while (index > 0) {
-		if (tmp == NULL) {
-			return NULL;
-		}
-		tmp = tmp->next;
-		index--;
-	}
-	return tmp;
-}
 
 /*
  * Insert element elem in list start. List start is sorted.
@@ -804,7 +786,7 @@ int main(int argc, char **argv) {
 	}
 
 	// XXX: Debug
-	elf_fill(0xaa);
+	elf_fill(0xcc);
 
 //---------------------------------------------------------------------------//
 // Copy executable header                                                    //
