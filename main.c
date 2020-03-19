@@ -190,23 +190,6 @@ void deleteList(Chain *start) {
 }
 
 /*
- * Size of list start.
- */
-size_t size(Chain *start) {
-	if (start->data.to == 0) {
-		/* no elements in list */
-		return 0;
-	}
-
-	size_t ret = 1;
-	while (start->next != NULL) {
-		ret++;
-		start = start->next;
-	}
-	return ret;
-}
-
-/*
  * compute the ranges to keep per section and store them in array dest
  */
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
@@ -488,24 +471,6 @@ int countLOADs(Elf *elf) {
 		}
 	}
 	free(phdr);
-	return count;
-}
-
-/*
- * Counts loadable ranges.
- */
-int countLoadableRanges(Chain *ranges, size_t size) {
-	int count = 0;
-
-	for (size_t i = 0; i < size; i++) {
-		Chain *tmp = &ranges[i];
-		while (tmp) {
-			if (tmp->as.loadable) {
-				count++;
-			}
-			tmp = tmp->next;
-		}
-	}
 	return count;
 }
 
