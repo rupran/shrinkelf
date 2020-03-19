@@ -610,6 +610,14 @@ struct segmentRanges *segments(Chain *section) {
 	return ret;
 }
 
+size_t sizeSegmentRanges(struct segmentRanges *start) {
+	size_t ret = 0;
+	for (struct segmentRanges *tmp = start; tmp; tmp = tmp->next) {
+		ret++;
+	}
+	return ret;
+}
+
 void deleteSegmentRanges(struct segmentRanges *start) {
 	if (start == NULL) {
 		return;
@@ -672,10 +680,16 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 		error(0, errno, "ran out of memory");
 		return NULL;
 	}
+	ret->segmentNum = size;
+	errno = 0;
+	ret->segments = calloc(ret->segmentNum, sizeof(struct segmentRanges *));
+	if (ret->segments == NULL) {
+		error(0, errno, "ran out of memory");
+		return NULL;
+	}
 
 	// number of LOAD entries in new PHDR table
-	size_t loads = countLoadableRanges(ranges, size) + 2;
-	int phdr_not_inserted = TRUE;
+	size_t loads = 2;
 	unsigned long long current_size = 0;
 	if (elfclass == ELFCLASS32) {
 		current_size = sizeof(Elf32_Ehdr);
@@ -685,50 +699,59 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
-		unsigned long long phdr_start = 0;
-		unsigned long long phdr_size = 0;
-		if (elfclass == ELFCLASS32) {
-			phdr_start = roundUp(current_size, sizeof(Elf32_Phdr));
-			phdr_size = (loads + oldEntries) * sizeof(Elf32_Phdr);
-		}
-		else {
-			phdr_start = roundUp(current_size, sizeof(Elf64_Phdr));
-			phdr_size = (loads + oldEntries) * sizeof(Elf64_Phdr);
-		}
+		ret->segments[i] = segments(&ranges[i]);
+		loads += sizeSegmentRanges(ret->segments[i]);
 
-		Chain *tmp = &ranges[i];
-		/* insert phdr if possible */
-		// FIXME: check memeory layout
-		if (phdr_not_inserted && tmp->data.section_offset >= (phdr_start + phdr_size)) {
-			phdr_not_inserted = FALSE;
-			current_size = phdr_start + phdr_size;
-			ret->phdr_start = phdr_start;
-			ret->phdr_entries = loads + oldEntries;
-		}
-		// size of already inserted complete sections
-		unsigned long long current_section_offset = current_size;
-		for (; tmp; tmp = tmp->next) {
-			tmp->data.section_shift = calculateOffset(tmp->data.section_offset, current_section_offset) - tmp->data.section_offset;
-			tmp->data.data_shift = calculateOffset(tmp->data.section_offset + tmp->data.from, current_size) - (tmp->data.section_offset + tmp->data.from + tmp->data.section_shift);
-			current_size = tmp->data.section_offset + tmp->data.to + tmp->data.section_shift + tmp->data.data_shift;
+		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
+			tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - (signed long long) tmp->range.offset;
+			current_size = calculateOffset(tmp->range.offset, current_size) + tmp->range.fsize;
 		}
 	}
 
-	/* insert phdr if not already done */
+	/* insert phdr */
 	// FIXME: check memeory layout
-	if (phdr_not_inserted) {
-		size_t entry_size = 0;
-		if (elfclass == ELFCLASS32) {
-			ret->phdr_start = roundUp(current_size, sizeof(Elf32_Phdr));
-			entry_size = sizeof(Elf32_Phdr);
+	for (size_t i = 1; i < size; i++) {
+		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
+			struct segmentRanges *ahead = tmp->next;
+			if (ahead == NULL) {
+				if (i < size - 1) {
+					ahead = ret->segments[i + 1];
+				}
+				else {
+					/* FIXME: problems */
+				}
+			}
+
+			size_t entry_size = 0;
+			unsigned long long phdr_start = 0;
+			if (elfclass == ELFCLASS32) {
+				phdr_start = roundUp(tmp->range.vaddr + tmp->range.msize, sizeof(Elf32_Phdr));
+				entry_size = sizeof(Elf32_Phdr);
+			}
+			else {
+				phdr_start = roundUp(tmp->range.vaddr + tmp->range.msize, sizeof(Elf64_Phdr));
+				entry_size = sizeof(Elf64_Phdr);
+			}
+
+			if (ahead->range.vaddr >= phdr_start + entry_size + (loads + oldEntries)) {
+				ret->phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, entry_size);
+				ret->phdr_entries = loads + oldEntries;
+				if (ahead->range.offset < ret->phdr_start + ret->phdr_entries * entry_size) {
+					unsigned long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - ahead->range.offset, PAGESIZE);
+					for (size_t j = i; j < size; j++) {
+						for (struct segmentRanges *tmp2 = ahead; tmp2; tmp2 = tmp2->next) {
+							tmp2->range.shift += shift;
+						}
+					}
+					current_size += shift;
+				}
+				goto done;
+			}
 		}
-		else {
-			ret->phdr_start = roundUp(current_size, sizeof(Elf64_Phdr));
-			entry_size = sizeof(Elf64_Phdr);
-		}
-		ret->phdr_entries = loads + oldEntries;
-		current_size = ret->phdr_start + ret->phdr_entries * entry_size;
 	}
+
+done:
+	calculateShift(ranges, ret->segments, size);
 
 	if (elfclass == ELFCLASS32) {
 		ret->shdr_start = roundUp(current_size, sizeof(Elf32_Shdr));
