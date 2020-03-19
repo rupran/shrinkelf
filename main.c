@@ -87,6 +87,24 @@ struct relocation_infos{
 };
 
 /*
+ * Range that will be loaded. Combines multiple ranges given via command line if needed.
+ * offset, fsize: offset and size in the original file
+ * vaddr, msize: virtual start address and size in memory
+ */
+struct segmentRange {
+	unsigned long long offset;
+	unsigned long long fsize;
+	unsigned long long vaddr;
+	unsigned long long msize;
+	signed long long shift;
+};
+
+struct segmentRanges {
+	struct segmentRanges *next;
+	struct segmentRange range;
+};
+
+/*
  * Description of the new file layout
  *
  * phdr_start, phdr_entries: start address and number of entries of new PHDR table
@@ -96,6 +114,8 @@ struct layoutDescription {
 	unsigned long long phdr_start;
 	unsigned long long phdr_entries;
 	unsigned long long shdr_start;
+	struct segmentRanges** segments;
+	size_t segmentNum;
 };
 
 
@@ -549,6 +569,19 @@ static int cmp (const void *p1, const void *p2) {
 	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
 }
 
+void deleteSegmentRanges(struct segmentRanges *start) {
+	if (start == NULL) {
+		return;
+	}
+	struct segmentRanges *tmp = start->next;
+	free(start);
+	while (tmp) {
+		start = tmp;
+		tmp = tmp->next;
+		free(start);
+	}
+}
+
 /*
  * Calculates the new file layout.
  *
@@ -642,6 +675,17 @@ unsigned long long calculateSectionSize(Chain *section) {
 		}
 	}
 	return size;
+}
+
+void deleteDesc(struct layoutDescription *desc) {
+	if (desc == NULL) {
+		return;
+	}
+
+	for (size_t i = 0; i < desc->segmentNum; i++) {
+		deleteSegmentRanges(desc->segments[i]);
+	}
+	free(desc);
 }
 
 
@@ -1221,7 +1265,7 @@ int main(int argc, char **argv) {
 	/* tidy up */
 	free(dstshdr);
 	free(srcshdr);
-	free(desc);
+	deleteDesc(desc);
 	free(srcphdr);
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
@@ -1257,7 +1301,7 @@ err_free_relinfos:
 		freeRelocs(relinfos);
 	}
 err_free_desc:
-	free(desc);
+	deleteDesc(desc);
 err_free_srcphdr:
 	free(srcphdr);
 err_free_section_ranges:
