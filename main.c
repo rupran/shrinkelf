@@ -623,6 +623,41 @@ void deleteSegmentRanges(struct segmentRanges *start) {
 	}
 }
 
+int contains(struct segmentRanges * segment, Chain *range) {
+	if (range->data.section_offset + range->data.to <= segment->range.offset + segment->range.fsize && range->data.section_offset + range->data.from >= segment->range.offset) {
+		return TRUE;
+	}
+	return FALSE;
+}
+
+signed long long calculateSectionShift(Chain * range, struct segmentRanges *segments) {
+	unsigned long long section_start = ULLONG_MAX;
+	for (Chain *tmp = range; tmp; tmp = tmp->next) {
+		for (struct segmentRanges *tmpSeg = segments; tmpSeg; tmpSeg = tmpSeg->next) {
+			if(contains(tmpSeg, tmp)) {
+				if(tmp->data.section_offset + tmpSeg->range.shift < section_start) {
+					section_start = tmp->data.section_offset + tmpSeg->range.shift;
+				}
+			}
+		}
+	}
+	return section_start - range->data.section_offset;
+}
+
+void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size) {
+	for (size_t i = 0; i < size; i++) {
+		signed long long section_shift = calculateSectionShift(&ranges[i], segments[i]);
+		for (struct segmentRanges *tmp = segments[i]; tmp; tmp = tmp->next) {
+			for (Chain *tmpSec = &ranges[i]; tmpSec; tmpSec = tmpSec->next) {
+				if (contains(tmp, tmpSec)) {
+					tmpSec->data.section_shift = section_shift;
+					tmpSec->data.data_shift = tmp->range.shift - section_shift;
+				}
+			}
+		}
+	}
+}
+
 /*
  * Calculates the new file layout.
  *
