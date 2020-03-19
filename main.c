@@ -569,6 +569,47 @@ static int cmp (const void *p1, const void *p2) {
 	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
 }
 
+// FIXME: comment
+struct segmentRanges *segments(Chain *section) {
+	if (section == NULL) {
+		return NULL;
+	}
+	errno = 0;
+	struct segmentRanges *ret = calloc(1, sizeof(struct segmentRanges));
+	if (ret == NULL) {
+		error(0, errno, "ran out of memory");
+		return NULL;
+	}
+	ret->next = NULL;
+	struct segmentRanges *current = ret;
+	current->range.offset = section->data.section_offset + section->data.from;
+	current->range.fsize = section->data.to - section->data.from;
+	current->range.vaddr = section->as.from;
+	current->range.msize = section->as.to - section->as.from;
+	for(Chain *tmp = section->next; tmp; tmp = tmp->next) {
+		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->as.from / PAGESIZE)) {
+			/* data of tmp range will be loaded in the same page as content of current range
+			 * => merge the ranges */
+			current->range.fsize = tmp->data.section_offset + tmp->data.to - current->range.offset;
+			current->range.msize = tmp->as.to - current->range.vaddr;
+		}
+		else {
+			errno = 0;
+			current->next = calloc(1, sizeof(struct segmentRanges));
+			if (current->next == NULL) {
+				error(0, errno, "ran out of memory");
+				return NULL;
+			}
+			current->next->range.offset = tmp->data.section_offset + tmp->data.from;
+			current->next->range.fsize = tmp->data.to - tmp->data.from;
+			current->next->range.vaddr = tmp->as.from;
+			current->next->range.msize = tmp->as.to - tmp->as.from;
+			current = current->next;
+		}
+	}
+	return ret;
+}
+
 void deleteSegmentRanges(struct segmentRanges *start) {
 	if (start == NULL) {
 		return;
