@@ -97,6 +97,7 @@ struct segmentRange {
 	unsigned long long vaddr;
 	unsigned long long msize;
 	signed long long shift;
+	int loadable;
 };
 
 struct segmentRanges {
@@ -586,12 +587,14 @@ struct segmentRanges *segments(Chain *section) {
 	current->range.fsize = section->data.to - section->data.from;
 	current->range.vaddr = section->as.from;
 	current->range.msize = section->as.to - section->as.from;
+	current->range.loadable = section->as.loadable;
 	for(Chain *tmp = section->next; tmp; tmp = tmp->next) {
 		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->as.from / PAGESIZE)) {
 			/* data of tmp range will be loaded in the same page as content of current range
 			 * => merge the ranges */
 			current->range.fsize = tmp->data.section_offset + tmp->data.to - current->range.offset;
 			current->range.msize = tmp->as.to - current->range.vaddr;
+			current->range.loadable |= tmp->as.loadable;
 		}
 		else {
 			errno = 0;
@@ -604,16 +607,19 @@ struct segmentRanges *segments(Chain *section) {
 			current->next->range.fsize = tmp->data.to - tmp->data.from;
 			current->next->range.vaddr = tmp->as.from;
 			current->next->range.msize = tmp->as.to - tmp->as.from;
+			current->next->range.loadable = tmp->as.loadable;
 			current = current->next;
 		}
 	}
 	return ret;
 }
 
-size_t sizeSegmentRanges(struct segmentRanges *start) {
+size_t countLoadableSegmentRanges(struct segmentRanges *start) {
 	size_t ret = 0;
 	for (struct segmentRanges *tmp = start; tmp; tmp = tmp->next) {
-		ret++;
+		if (tmp->range.loadable) {
+			ret++;
+		}
 	}
 	return ret;
 }
@@ -700,7 +706,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
 		ret->segments[i] = segments(&ranges[i]);
-		loads += sizeSegmentRanges(ret->segments[i]);
+		loads += countLoadableSegmentRanges(ret->segments[i]);
 
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
 			tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - (signed long long) tmp->range.offset;
