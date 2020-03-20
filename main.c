@@ -722,6 +722,7 @@ void deleteDesc(struct layoutDescription *desc) {
 	for (size_t i = 0; i < desc->segmentNum; i++) {
 		deleteSegmentRanges(desc->segments[i]);
 	}
+	free(desc->segments);
 	free(desc);
 }
 
