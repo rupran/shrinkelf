@@ -75,8 +75,10 @@ struct segmentRange {
 	unsigned long long fsize;
 	unsigned long long vaddr;
 	unsigned long long msize;
+	unsigned long long flags;
 	signed long long shift;
 	int loadable;
+	unsigned long long section_shift;
 };
 
 struct segmentRanges {
@@ -503,7 +505,7 @@ static int cmp (const void *p1, const void *p2) {
 }
 
 // FIXME: comment
-struct segmentRanges *segments(Chain *section) {
+struct segmentRanges *segments(Chain *section, unsigned long long section_shift) {
 	if (section == NULL) {
 		return NULL;
 	}
@@ -519,7 +521,9 @@ struct segmentRanges *segments(Chain *section) {
 	current->range.fsize = section->data.to - section->data.from;
 	current->range.vaddr = section->as.from;
 	current->range.msize = section->as.to - section->as.from;
+	current->range.flags = section->as.flags;
 	current->range.loadable = section->as.loadable;
+	current->range.section_shift = section_shift;
 	for(Chain *tmp = section->next; tmp; tmp = tmp->next) {
 		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->as.from / PAGESIZE)) {
 			/* data of tmp range will be loaded in the same page as content of current range
@@ -527,6 +531,7 @@ struct segmentRanges *segments(Chain *section) {
 			current->range.fsize = tmp->data.section_offset + tmp->data.to - current->range.offset;
 			current->range.msize = tmp->as.to - current->range.vaddr;
 			current->range.loadable |= tmp->as.loadable;
+			// FIXME: flags
 		}
 		else {
 			errno = 0;
@@ -539,7 +544,9 @@ struct segmentRanges *segments(Chain *section) {
 			current->next->range.fsize = tmp->data.to - tmp->data.from;
 			current->next->range.vaddr = tmp->as.from;
 			current->next->range.msize = tmp->as.to - tmp->as.from;
+			current->next->range.flags = tmp->as.flags;
 			current->next->range.loadable = tmp->as.loadable;
+			current->next->range.section_shift = section_shift;
 			current = current->next;
 		}
 	}
@@ -591,8 +598,8 @@ signed long long calculateSectionShift(Chain * range, struct segmentRanges *segm
 }
 
 void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size) {
-	for (size_t i = 0; i < size; i++) {
-		signed long long section_shift = calculateSectionShift(&ranges[i], segments[i]);
+	for (size_t i = 1; i < size; i++) {
+		signed long long section_shift = segments[i]->range.section_shift;
 		for (struct segmentRanges *tmp = segments[i]; tmp; tmp = tmp->next) {
 			for (Chain *tmpSec = &ranges[i]; tmpSec; tmpSec = tmpSec->next) {
 				if (contains(tmp, tmpSec)) {
@@ -637,7 +644,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
-		ret->segments[i] = segments(&ranges[i]);
+		ret->segments[i] = segments(&ranges[i], calculateOffset(ranges[i].data.section_offset, current_size) - ranges[i].data.section_offset);
 		loads += countLoadableSegmentRanges(ret->segments[i]);
 
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
@@ -671,14 +678,19 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 				entry_size = sizeof(Elf64_Phdr);
 			}
 
-			if (ahead->range.vaddr >= phdr_start + entry_size + (loads + oldEntries)) {
+			if (ahead->range.vaddr >= phdr_start + entry_size * (loads + oldEntries)) {
 				ret->phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, entry_size);
 				ret->phdr_entries = loads + oldEntries;
-				if (ahead->range.offset < ret->phdr_start + ret->phdr_entries * entry_size) {
-					unsigned long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - ahead->range.offset, PAGESIZE);
-					for (size_t j = i; j < size; j++) {
-						for (struct segmentRanges *tmp2 = ahead; tmp2; tmp2 = tmp2->next) {
-							tmp2->range.shift += shift;
+				if (ahead->range.offset + ahead->range.shift < ret->phdr_start + ret->phdr_entries * entry_size) {
+					signed long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - (ahead->range.offset + ahead->range.shift), PAGESIZE);
+					for (struct segmentRanges *tmp2 = ahead; tmp2; tmp2 = tmp2->next) {
+						tmp2->range.shift += shift;
+						tmp2->range.section_shift += shift;
+					}
+					for (size_t j = (ahead == ret->segments[i + 1]) ? i + 2 : i + 1; j < size; j++) {
+						for (struct segmentRanges *tmp3 = ret->segments[j]; tmp3; tmp3 = tmp3->next) {
+							tmp3->range.shift += shift;
+							tmp3->range.section_shift += shift;
 						}
 					}
 					current_size += shift;
@@ -1025,22 +1037,20 @@ int main(int argc, char **argv) {
 			new_index++;
 
 			/* insert LOAD segments for sections */
-			for (size_t i = 0; i < scnnum; i++) {
-				Chain *tmp = &section_ranges[i];
-				while (tmp) {
-					if (tmp->as.loadable) {
+			for (size_t j = 0; j < desc->segmentNum; j++) {
+				for (struct segmentRanges *tmp = desc->segments[j]; tmp; tmp = tmp->next) {
+					if (tmp->range.loadable) {
 						dstphdrs[new_index].p_type = PT_LOAD;
-						dstphdrs[new_index].p_offset = tmp->data.section_offset + tmp->data.from + tmp->data.section_shift + tmp->data.data_shift;
-						dstphdrs[new_index].p_vaddr = tmp->as.from;
-						dstphdrs[new_index].p_paddr = tmp->as.from;
-						dstphdrs[new_index].p_filesz = tmp->data.to - tmp->data.from;
-						dstphdrs[new_index].p_memsz = tmp->as.to - tmp->as.from;
-						dstphdrs[new_index].p_flags = tmp->as.flags;
+						dstphdrs[new_index].p_offset = tmp->range.offset + tmp->range.shift;
+						dstphdrs[new_index].p_vaddr = tmp->range.vaddr;
+						dstphdrs[new_index].p_paddr = tmp->range.vaddr;
+						dstphdrs[new_index].p_filesz = tmp->range.fsize;
+						dstphdrs[new_index].p_memsz = tmp->range.msize;
+						dstphdrs[new_index].p_flags = tmp->range.flags;
 						dstphdrs[new_index].p_align = PAGESIZE;
 
 						new_index++;
 					}
-					tmp = tmp->next;
 				}
 			}
 			/* LOAD segment for PHDR */
