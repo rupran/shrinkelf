@@ -80,7 +80,7 @@ struct segmentRange {
 	unsigned long long flags;
 	signed long long shift;
 	int loadable;
-	unsigned long long section_shift;
+	unsigned long long section_start;
 };
 
 struct segmentRanges {
@@ -101,6 +101,13 @@ struct layoutDescription {
 	unsigned long long shdr_start;
 	struct segmentRanges** segments;
 	size_t segmentNum;
+};
+
+struct permutation {
+	unsigned long long *tmp;
+	unsigned long long *result;
+	unsigned long long numEntries;
+	unsigned long long size;
 };
 
 
@@ -508,7 +515,7 @@ static int cmp (const void *p1, const void *p2) {
 }
 
 // FIXME: comment
-struct segmentRanges *segments(Chain *section, unsigned long long section_shift) {
+struct segmentRanges *segments(Chain *section, unsigned long long section_start) {
 	if (section == NULL) {
 		return NULL;
 	}
@@ -526,7 +533,7 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_shift)
 	current->range.msize = section->as.to - section->as.from;
 	current->range.flags = section->as.flags;
 	current->range.loadable = section->as.loadable;
-	current->range.section_shift = section_shift;
+	current->range.section_start = section_start;
 	for(Chain *tmp = section->next; tmp; tmp = tmp->next) {
 		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->as.from / PAGESIZE)) {
 			/* data of tmp range will be loaded in the same page as content of current range
@@ -549,7 +556,7 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_shift)
 			current->next->range.msize = tmp->as.to - tmp->as.from;
 			current->next->range.flags = tmp->as.flags;
 			current->next->range.loadable = tmp->as.loadable;
-			current->next->range.section_shift = section_shift;
+			current->next->range.section_start = section_start;
 			current = current->next;
 		}
 	}
@@ -602,16 +609,212 @@ signed long long calculateSectionShift(Chain * range, struct segmentRanges *segm
 
 void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size) {
 	for (size_t i = 1; i < size; i++) {
-		signed long long section_shift = segments[i]->range.section_shift;
 		for (struct segmentRanges *tmp = segments[i]; tmp; tmp = tmp->next) {
 			for (Chain *tmpSec = &ranges[i]; tmpSec; tmpSec = tmpSec->next) {
 				if (contains(tmp, tmpSec)) {
-					tmpSec->data.section_shift = section_shift;
-					tmpSec->data.data_shift = tmp->range.shift - section_shift;
+					tmpSec->data.section_shift = tmp->range.section_start - tmpSec->data.section_offset;
+					tmpSec->data.data_shift = tmp->range.shift - tmpSec->data.section_shift;
 				}
 			}
 		}
 	}
+}
+
+unsigned long long numEntries(struct segmentRanges *segments) {
+	unsigned long long ret = 0;
+	for (struct segmentRanges *tmp = segments; tmp; tmp = tmp->next) {
+		ret++;
+	}
+	return ret;
+}
+
+struct segmentRanges * get(struct segmentRanges *segments, unsigned long long index) {
+	if (index == 0) {
+		return segments;
+	}
+	struct segmentRanges *ret = segments;
+	for (; index > 0; index--) {
+		if (ret->next == NULL) {
+			return NULL;
+		}
+		ret = ret->next;
+	}
+	return ret;
+}
+
+struct permutation * createPermutation(struct segmentRanges **segments, size_t size, size_t index, unsigned long long current_size) {
+	errno = 0;
+	struct permutation *ret = calloc(1, sizeof(struct permutation));
+	if (ret == NULL) {
+		error(0, errno, "ran out of memory");
+		return NULL;
+	}
+	ret->numEntries = numEntries(segments[index]);
+	if (ret->numEntries >= ULLONG_MAX - 1) {
+		/* too many entries */
+		error(0, 0, "too many ranges to process");
+		goto err_free_perm;
+	}
+	errno = 0;
+	ret->tmp = calloc(ret->numEntries, sizeof(unsigned long long));
+	if (ret->tmp == NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_perm;
+	}
+	errno = 0;
+	ret->result = calloc(ret->numEntries, sizeof(unsigned long long));
+	if (ret->result== NULL) {
+		error(0, errno, "ran out of memory");
+		goto err_free_tmp;
+	}
+
+	if (current_size / PAGESIZE == (segments[index]->range.offset + segments[index]->range.fsize) / PAGESIZE) {
+		/* mark first element because its on the same page as the previous section */
+		ret->tmp[0] = ULLONG_MAX;
+		ret->result[0] = ULLONG_MAX;
+	}
+	if (index != size - 1) {
+		struct segmentRanges * last = get(segments[index], numEntries(segments[index]) - 1);
+		if ((last->range.offset + last->range.fsize) / PAGESIZE == (segments[index + 1]->range.offset + segments[index + 1]->range.fsize) / PAGESIZE) {
+			/* mark last element because its on the same page as the next section */
+			ret->tmp[ret->numEntries - 1] = ULLONG_MAX;
+			ret->result[ret->numEntries - 1] = ULLONG_MAX;
+		}
+	}
+
+	/* set section size - concecptionally - to infinit because it is not determined now */
+	ret->size = ULLONG_MAX;
+
+	return ret;
+
+err_free_tmp:
+	free(ret->tmp);
+err_free_perm:
+	free(ret);
+	return NULL;
+}
+
+void deletePermutation(struct permutation *perm) {
+	if (perm == NULL) {
+		return;
+	}
+
+	if (perm->tmp != NULL) {
+		free(perm->tmp);
+	}
+
+	if (perm->result != NULL) {
+		free(perm->result);
+	}
+
+	free(perm);
+}
+
+// result und size aktualisieren
+void evaluate(struct permutation *perm, struct segmentRanges *segments) {
+	unsigned long long start = 0;
+	unsigned long long end = 0;
+
+	for (unsigned long long i = 1; i <= perm->numEntries; i++) {
+		if (i == 1 && perm->tmp[0] == ULLONG_MAX) {
+			start = segments->range.offset;
+			end = segments->range.offset + segments->range.fsize;
+			continue;
+		}
+		else if (i == perm->numEntries && perm->tmp[perm->numEntries - 1] == ULLONG_MAX) {
+			struct segmentRanges *tmp = get(segments, perm->numEntries - 1);
+			end = calculateOffset(tmp->range.offset, end) + tmp->range.fsize;
+			break;
+		}
+		else {
+			for (unsigned long long j = 0; j < perm->numEntries; j++) {
+				if (i == perm->tmp[j]) {
+					struct segmentRanges *tmp = get(segments, j);
+					if (i == 1) {
+						start = tmp->range.offset;
+						end = tmp->range.offset;
+					}
+					end = calculateOffset(tmp->range.offset, end) + tmp->range.fsize;
+				}
+			}
+		}
+	}
+
+	unsigned long long size = end - start;
+	if (size < perm->size) {
+		for (unsigned long long i = 0; i < perm->numEntries; i++) {
+			perm->result[i] = perm->tmp[i];
+		}
+		perm->size = size;
+	}
+}
+
+void recursive_permutate(struct permutation *perm, struct segmentRanges *segments, unsigned long long index) {
+	if (index > perm->numEntries) {
+		evaluate(perm, segments);
+		return;
+	}
+
+	if (index == 1 && perm->tmp[0] == ULLONG_MAX) {
+		recursive_permutate(perm, segments, index + 1);
+	}
+	else if (index == perm->numEntries && perm->tmp[perm->numEntries - 1] == ULLONG_MAX) {
+		recursive_permutate(perm, segments, index + 1);
+	}
+	else {
+		for (unsigned long long i = 0; i < perm->numEntries; i++) {
+			if (perm->tmp[i] == 0) {
+				perm->tmp[i] = index;
+				recursive_permutate(perm, segments, index + 1);
+				perm->tmp[i] = 0;
+			}
+		}
+	}
+	return;
+}
+
+void segmentOffsets(struct permutation *perm, struct segmentRanges *segments, unsigned long long current_size) {
+	unsigned long long section_start = 0;
+	for (unsigned long long i = 1; i <= perm->numEntries; i++) {
+		if (i == 1 && perm->result[0] == ULLONG_MAX) {
+			section_start = calculateOffset(segments->range.offset, current_size);
+			segments->range.shift = section_start - segments->range.offset;
+			segments->range.section_start = section_start;
+			current_size = section_start + segments->range.fsize;
+		}
+		else if (i == perm->numEntries && perm->result[perm->numEntries - 1] == ULLONG_MAX) {
+			struct segmentRanges *tmp = get(segments, perm->numEntries - 1);
+			tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - tmp->range.offset;
+			tmp->range.section_start = section_start;
+		}
+		else {
+			for (unsigned long long j = 0; j < perm->numEntries; j++) {
+				if (i == perm->result[j]) {
+					struct segmentRanges *tmp = get(segments, j);
+					if (i == 1) {
+						section_start = calculateOffset(tmp->range.offset, current_size);
+					}
+					tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - tmp->range.offset;
+					tmp->range.section_start = section_start;
+					current_size = calculateOffset(tmp->range.offset, current_size) + tmp->range.fsize;
+				}
+			}
+		}
+	}
+}
+
+unsigned long long permutate(struct segmentRanges **segments, size_t size, unsigned long long current_size) {
+	for (size_t i = 1; i < size; i++) {
+		struct permutation *perm = createPermutation(segments, size, i, current_size);
+		if (perm == NULL) {
+			return 0;
+		}
+		recursive_permutate(perm, segments[i], 1);
+		segmentOffsets(perm, segments[i], current_size);
+		current_size = segments[i]->range.section_start + perm->size;
+		deletePermutation(perm);
+	}
+	return current_size;
 }
 
 void deleteDesc(struct layoutDescription *desc) {
@@ -659,17 +862,16 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
-		ret->segments[i] = segments(&ranges[i], calculateOffset(ranges[i].data.section_offset, current_size) - ranges[i].data.section_offset);
+		ret->segments[i] = segments(&ranges[i], calculateOffset(ranges[i].data.section_offset, current_size));
 		loads += countLoadableSegmentRanges(ret->segments[i]);
+	}
 
-		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
-			tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - (signed long long) tmp->range.offset;
-			current_size = calculateOffset(tmp->range.offset, current_size) + tmp->range.fsize;
-		}
+	current_size = permutate(ret->segments, ret->segmentNum, current_size);
+	if (current_size == 0) {
+		goto err_free_ret;
 	}
 
 	/* insert phdr */
-	// FIXME: check memeory layout
 	for (size_t i = 1; i < size; i++) {
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
 			struct segmentRanges *ahead = tmp->next;
@@ -718,12 +920,12 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 					signed long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - (ahead->range.offset + ahead->range.shift), PAGESIZE);
 					for (struct segmentRanges *tmp2 = ahead; tmp2; tmp2 = tmp2->next) {
 						tmp2->range.shift += shift;
-						tmp2->range.section_shift += shift;
+						tmp2->range.section_start += shift;
 					}
 					for (size_t j = (ahead == ret->segments[i + 1]) ? i + 2 : i + 1; j < size; j++) {
 						for (struct segmentRanges *tmp3 = ret->segments[j]; tmp3; tmp3 = tmp3->next) {
 							tmp3->range.shift += shift;
-							tmp3->range.section_shift += shift;
+							tmp3->range.section_start += shift;
 						}
 					}
 					current_size += shift;
