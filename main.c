@@ -274,13 +274,16 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				}
 			}
 
-			// FIXME: Alignment im Testfall
+#ifdef TESTCASE
 			if (srcshdr->sh_addralign != 65536) {
 				tmp->data.section_align = srcshdr->sh_addralign;
 			}
 			else {
 				tmp->data.section_align = 16;
 			}
+#else
+			tmp->data.section_align = srcshdr->sh_addralign;
+#endif
 			tmp->data.section_offset = srcshdr->sh_offset;
 
 			/* memory layout of section range */
@@ -362,13 +365,16 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->data.to = srcshdr->sh_size;
 			}
 
-			// FIXME: Alignment im Testfall
+#ifdef TESTCASE
 			if (srcshdr->sh_addralign != 65536) {
 				tmp->data.section_align = srcshdr->sh_addralign;
 			}
 			else {
 				tmp->data.section_align = 16;
 			}
+#else
+			tmp->data.section_align = srcshdr->sh_addralign;
+#endif
 			tmp->data.section_offset = srcshdr->sh_offset;
 
 			/* memory layout of section range */
@@ -1472,13 +1478,16 @@ fixed:
 		dstshdr->sh_type = srcshdr->sh_type;
 		dstshdr->sh_addr = srcshdr->sh_addr;
 		dstshdr->sh_flags = srcshdr->sh_flags;
-		// FIXME: sinnvollere Methode, das Alignment-Problem im Testfall zu lösen
+#ifdef TESTCASE
 		if (srcshdr->sh_addralign == 65536) {
 			dstshdr->sh_addralign = 16;
 		}
 		else {
 			dstshdr->sh_addralign = srcshdr->sh_addralign;
 		}
+#else
+		dstshdr->sh_addralign = srcshdr->sh_addralign;
+#endif
 		dstshdr->sh_offset = srcshdr->sh_offset + section_ranges[i].data.section_shift;
 		if (srcshdr->sh_type == SHT_NOBITS) {
 			dstshdr->sh_size = srcshdr->sh_size;
