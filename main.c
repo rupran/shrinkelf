@@ -16,6 +16,8 @@
 #define PAGESIZE 0x1000
 #define FALSE 0x00
 #define TRUE 0xff
+#define PHDR32ALIGN 8
+#define PHDR64ALIGN 8
 
 const char *FILESUFFIX = ".shrinked";
 
@@ -94,6 +96,7 @@ struct segmentRanges {
  */
 struct layoutDescription {
 	unsigned long long phdr_start;
+	unsigned long long phdr_vaddr;
 	unsigned long long phdr_entries;
 	unsigned long long shdr_start;
 	struct segmentRanges** segments;
@@ -531,7 +534,7 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_shift)
 			current->range.fsize = tmp->data.section_offset + tmp->data.to - current->range.offset;
 			current->range.msize = tmp->as.to - current->range.vaddr;
 			current->range.loadable |= tmp->as.loadable;
-			// FIXME: flags
+			current->range.flags |= tmp->as.flags;
 		}
 		else {
 			errno = 0;
@@ -611,6 +614,18 @@ void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size)
 	}
 }
 
+void deleteDesc(struct layoutDescription *desc) {
+	if (desc == NULL) {
+		return;
+	}
+
+	for (size_t i = 0; i < desc->segmentNum; i++) {
+		deleteSegmentRanges(desc->segments[i]);
+	}
+	free(desc->segments);
+	free(desc);
+}
+
 /*
  * Calculates the new file layout.
  *
@@ -630,7 +645,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	ret->segments = calloc(ret->segmentNum, sizeof(struct segmentRanges *));
 	if (ret->segments == NULL) {
 		error(0, errno, "ran out of memory");
-		return NULL;
+		goto err_free_ret;
 	}
 
 	// number of LOAD entries in new PHDR table
@@ -663,23 +678,41 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 					ahead = ret->segments[i + 1];
 				}
 				else {
-					/* FIXME: problems */
+					// untested
+					// FIXME: Aligment not given after NOBITS sections
+					unsigned long long table_size = 0;
+					if (elfclass == ELFCLASS32) {
+						ret->phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, PHDR32ALIGN);
+						ret->phdr_vaddr = roundUp(tmp->range.vaddr + tmp->range.msize, PHDR32ALIGN);
+						table_size = sizeof(Elf32_Phdr) * (loads + oldEntries);
+					}
+					else {
+						ret->phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, PHDR64ALIGN);
+						ret->phdr_vaddr = roundUp(tmp->range.vaddr + tmp->range.msize, PHDR64ALIGN);
+						table_size = sizeof(Elf64_Phdr) * (loads + oldEntries);
+					}
+					current_size = ret->phdr_start + table_size;
+					goto done;
 				}
 			}
 
 			size_t entry_size = 0;
+			unsigned long long phdr_vaddr = 0;
 			unsigned long long phdr_start = 0;
 			if (elfclass == ELFCLASS32) {
-				phdr_start = roundUp(tmp->range.vaddr + tmp->range.msize, sizeof(Elf32_Phdr));
+				phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, PHDR32ALIGN);
+				phdr_vaddr = roundUp(tmp->range.vaddr + tmp->range.msize, PHDR32ALIGN);
 				entry_size = sizeof(Elf32_Phdr);
 			}
 			else {
-				phdr_start = roundUp(tmp->range.vaddr + tmp->range.msize, sizeof(Elf64_Phdr));
+				phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, PHDR64ALIGN);
+				phdr_vaddr = roundUp(tmp->range.vaddr + tmp->range.msize, PHDR64ALIGN);
 				entry_size = sizeof(Elf64_Phdr);
 			}
 
-			if (ahead->range.vaddr >= phdr_start + entry_size * (loads + oldEntries)) {
-				ret->phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, entry_size);
+			if (ahead->range.vaddr >= phdr_vaddr + entry_size * (loads + oldEntries)) {
+				ret->phdr_start = phdr_start;
+				ret->phdr_vaddr = phdr_vaddr;
 				ret->phdr_entries = loads + oldEntries;
 				if (ahead->range.offset + ahead->range.shift < ret->phdr_start + ret->phdr_entries * entry_size) {
 					signed long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - (ahead->range.offset + ahead->range.shift), PAGESIZE);
@@ -710,6 +743,10 @@ done:
 		ret->shdr_start = roundUp(current_size, sizeof(Elf64_Shdr));
 	}
 	return ret;
+
+err_free_ret:
+	deleteDesc(ret);
+	return NULL;
 }
 
 /*
@@ -724,18 +761,6 @@ unsigned long long calculateSectionSize(Chain *section) {
 		}
 	}
 	return size;
-}
-
-void deleteDesc(struct layoutDescription *desc) {
-	if (desc == NULL) {
-		return;
-	}
-
-	for (size_t i = 0; i < desc->segmentNum; i++) {
-		deleteSegmentRanges(desc->segments[i]);
-	}
-	free(desc->segments);
-	free(desc);
 }
 
 
@@ -1058,9 +1083,8 @@ int main(int argc, char **argv) {
 			dstehdr->e_phoff = desc->phdr_start;
 			dstphdrs[new_index].p_offset = dstehdr->e_phoff;
 			if (elfclass == ELFCLASS32) {
-				// FIXME: p_vaddr & p_paddr fixen
-				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
+				dstphdrs[new_index].p_vaddr = desc->phdr_vaddr;
+				dstphdrs[new_index].p_paddr = desc->phdr_vaddr;
 				dstphdrs[new_index].p_filesz = desc->phdr_entries * sizeof(Elf32_Phdr);
 				dstphdrs[new_index].p_memsz = desc->phdr_entries * sizeof(Elf32_Phdr);
 
@@ -1070,9 +1094,8 @@ int main(int argc, char **argv) {
 				phdr_filesz = dstphdrs[new_index].p_filesz;
 			}
 			else {
-				// FIXME: p_vaddr & p_paddr fixen
-				dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr + dstphdrs[new_index].p_offset;
-				dstphdrs[new_index].p_paddr = srcphdr->p_paddr + dstphdrs[new_index].p_offset;
+				dstphdrs[new_index].p_vaddr = desc->phdr_vaddr;
+				dstphdrs[new_index].p_paddr = desc->phdr_vaddr;
 				dstphdrs[new_index].p_filesz = desc->phdr_entries * sizeof(Elf64_Phdr);
 				dstphdrs[new_index].p_memsz = desc->phdr_entries * sizeof(Elf64_Phdr);
 
