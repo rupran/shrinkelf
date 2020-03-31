@@ -847,7 +847,7 @@ void deleteDesc(struct layoutDescription *desc) {
  * oldEntries: number of PHDR entries of original file that are NOT LOADs
  * elflass: Elf Class (32bit or 64bit)
  */
-struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass) {
+struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass, int permutateRanges) {
 	errno = 0;
 	struct layoutDescription *ret = calloc(1, sizeof(struct layoutDescription));
 	if (ret == NULL) {
@@ -877,9 +877,21 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 		loads += countLoadableSegmentRanges(ret->segments[i]);
 	}
 
-	current_size = permutate(ret->segments, ret->segmentNum, current_size);
-	if (current_size == 0) {
-		goto err_free_ret;
+	if (permutateRanges) {
+		current_size = permutate(ret->segments, ret->segmentNum, current_size);
+		if (current_size == 0) {
+			goto err_free_ret;
+		}
+	}
+	else {
+		for (size_t i = 1; i < size; i++) {
+			unsigned long long section_start = calculateOffset(ret->segments[i]->range.offset, current_size);
+			for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
+				tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - (signed long long) tmp->range.offset;
+				tmp->range.section_start = section_start;
+				current_size = calculateOffset(tmp->range.offset, current_size) + tmp->range.fsize;
+			}
+		}
 	}
 
 	errno = 0;
@@ -1302,7 +1314,7 @@ int main(int argc, char **argv) {
 		goto err_free_srcphdr;
 	}
 	// description of layout of new file
-	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass);
+	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass, args_info.permutate_given);
 	if (desc == NULL) {
 		goto err_free_srcphdr;
 	}
