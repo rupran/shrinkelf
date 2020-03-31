@@ -9,8 +9,10 @@
 #include <stdio.h>
 #include <limits.h>
 
-#include "libelf/libelf.h"
-#include "libelf/gelf.h"
+#include <libelf.h>
+#include <gelf.h>
+
+#include "cmdline.h"
 
 
 #define PAGESIZE 0x1000
@@ -1081,85 +1083,70 @@ unsigned long long calculateSectionSize(Chain *section) {
 
 
 int main(int argc, char **argv) {
-	Chain *ranges = NULL;
-
 //---------------------------------------------------------------------------//
 // Command line argument processing                                          //
 //---------------------------------------------------------------------------//
-	int opt;
-	while ((opt = getopt(argc, argv, "hk:")) != -1) {
-		switch (opt) {
-			case 'k':
-				/* you can't have a label on a declaration because of it's C */
-				;
-				char *split = strpbrk(optarg, ":-");
-				if (split == NULL) {
-					error(0, 0, "Invalid range argument '%s' - ignoring!", optarg);
+	struct gengetopt_args_info args_info;
+	if (cmdline_parser(argc, argv, &args_info) != 0) {
+		exit(EXIT_FAILURE);
+	}
+
+	if (args_info.inputs_num != 1) {
+		// no file or too many files
+		error(0, 0, "No input file or too many input files (use -h for help)");
+		goto err_free_args_info;
+	}
+
+	Chain *ranges = NULL;
+	for (size_t i = 0; i < args_info.keep_given; i++) {
+		char *split = strpbrk(args_info.keep_arg[i], ":-");
+		if (split == NULL) {
+			error(0, 0, "Invalid range argument '%s' - ignoring!", args_info.keep_arg[i]);
+		}
+		else {
+			errno = 0;
+			Chain *tmp = calloc(1, sizeof(Chain));
+			if (tmp == NULL) {
+				error(0, errno, "Unable to allocate memory");
+				goto err_free_ranges;
+			}
+			tmp->next = NULL;
+			tmp->as.loadable = FALSE;
+			char *from = NULL;
+			errno = 0;
+			tmp->data.from = strtoull(args_info.keep_arg[i], &from, 0);
+			if (tmp->data.from == ULLONG_MAX && errno != 0) {
+				error(0, errno, "First part of range argument '%s' not parsable - ignoring!", args_info.keep_arg[i]);
+			}
+			char *to = NULL;
+			errno = 0;
+			tmp->data.to = strtoull(split + 1, &to, 0);
+			if (tmp->data.to == ULLONG_MAX && errno != 0) {
+				error(0, errno, "Second part of range argument '%s' not parsable - ignoring!", args_info.keep_arg[i]);
+			}
+			if ((tmp->data.from == 0 && from == args_info.keep_arg[i]) || (tmp->data.to == 0 && to == split + 1) || errno != 0 || from != split || *to != '\0') {
+				error(0, 0, "Range argument '%s' not parsable - ignoring!", args_info.keep_arg[i]);
+			}
+			else {
+				if (*split == ':') {
+					tmp->data.to += tmp->data.from;
+				}
+				if (tmp->data.to <= tmp->data.from) {
+					error(0, 0, "Invalid range '%s' - ignoring!", args_info.keep_arg[i]);
 				}
 				else {
-					errno = 0;
-					Chain *tmp = calloc(1, sizeof(Chain));
-					if (tmp == NULL) {
-						error(0, errno, "Unable to allocate memory");
-						goto err_free_ranges;
-					}
-					tmp->next = NULL;
-					tmp->as.loadable = FALSE;
-					char *from = NULL;
-					errno = 0;
-					tmp->data.from = strtoull(optarg, &from, 0);
-					if (tmp->data.from == ULLONG_MAX && errno != 0) {
-						error(0, errno, "First part of range argument '%s' not parsable - ignoring!", optarg);
-					}
-					char *to = NULL;
-					errno = 0;
-					tmp->data.to = strtoull(split + 1, &to, 0);
-					if (tmp->data.to == ULLONG_MAX && errno != 0) {
-						error(0, errno, "Second part of range argument '%s' not parsable - ignoring!", optarg);
-					}
-					if ((tmp->data.from == 0 && from == optarg) || (tmp->data.to == 0 && to == split + 1) || errno != 0 || from != split || *to != '\0') {
-						error(0, 0, "Range argument '%s' not parsable - ignoring!", optarg);
+					if (ranges == NULL) {
+						ranges = tmp;
 					}
 					else {
-						if (*split == ':') {
-							tmp->data.to += tmp->data.from;
-						}
-						if (tmp->data.to <= tmp->data.from) {
-							error(0, 0, "Invalid range '%s' - ignoring!", optarg);
-						}
-						else {
-							if (ranges == NULL) {
-								ranges = tmp;
-							}
-							else {
-								insert(ranges, tmp);
-							}
-						}
+						insert(ranges, tmp);
 					}
 				}
-				break;
-			case 'h':
-			case '?':
-				printf("Usage: shrinkelf [-h] INPUT\n");
-				printf("   -h        Print this help\n");
-				printf("   -k RANGE  Keep given RANGE. Accepted formats are\n");
-				printf("               'START-END' exclusive END\n");
-				printf("               'START:LEN' LEN in bytes\n");
-				printf("             with common prefixes for base.\n");
-				printf("   INPUT     Input file\n");
-				return 0;
-			default:
-				error(0, 0, "Invalid parameter '-%c', abort (use -h for help).", opt);
-				goto err_free_ranges;
+			}
 		}
 	}
 
-	if (optind >= argc) {
-		error(0, 0, "No input file (use -h for help)");
-		goto err_free_ranges;
-	}
-
-	char *filename = argv[optind];
+	char *filename = args_info.inputs[0];
 
 //---------------------------------------------------------------------------//
 // Setup                                                                     //
@@ -1597,6 +1584,7 @@ fixed:
 	if (close(srcfd) < 0) {
 		error(EXIT_FAILURE, errno, "unable to close %s", filename);
 	}
+	cmdline_parser_free(&args_info);
 
 	return 0;
 
@@ -1643,5 +1631,7 @@ err_free_ranges:
 	if (ranges != NULL) {
 		deleteList(ranges);
 	}
+err_free_args_info:
+	cmdline_parser_free(&args_info);
 	exit(EXIT_FAILURE);
 }

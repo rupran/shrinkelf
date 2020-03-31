@@ -1,0 +1,30 @@
+package "shrinkelf"
+version "0.1"
+# purpose "<purpose>"
+# usage "<usage>"
+# description "<description>"
+# versiontext "<versiontext>"
+
+args "--unamed-opts=FILE"
+
+# option <long> <short> "<desc>"
+#	{details="<detailed description>"}
+#	{argtype} {typestr="<type descr>"}
+#	{values="<value1>","<value2>",...}
+#	{default="<default value>"}
+#	{dependon="<other option>"}
+#	{required} {argoptional} {multiple}
+#	{hidden}
+
+# option <long> <short> "<desc>" flag <on/off>
+
+
+option "keep" k "range to keep" string multiple
+option "permutate" p "permutate ranges" optional
+option "output-file" o "name of the output file" string optional
+
+
+# section "section name" {sectiondesc="optional section description"}
+
+# text "a textual sentence"
+
