@@ -1108,6 +1108,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "No input file or too many input files (use -h for help)");
 		goto err_free_args_info;
 	}
+	char *filename = args_info.inputs[0];
 
 	Chain *ranges = NULL;
 	for (size_t i = 0; i < args_info.keep_given; i++) {
@@ -1158,7 +1159,30 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	char *filename = args_info.inputs[0];
+	char *dstfname;
+	if (args_info.output_file_given) {
+		if(strcmp(filename, args_info.output_file_arg) == 0) {
+			error(0, 0, "input and output file are the same");
+			goto err_free_ranges;
+		}
+		dstfname = args_info.output_file_arg;
+	}
+	else {
+		size_t fnamesz = strlen(filename) + strlen(FILESUFFIX) + 1;
+		if (fnamesz <= strlen(filename) || fnamesz <= strlen(FILESUFFIX)) {
+			error(0, 0, "resulting output filename too long");
+			goto err_free_ranges;
+		}
+		errno = 0;
+		// filename of new file
+		dstfname = calloc(fnamesz, sizeof(char));
+		if(dstfname == NULL) {
+			error(0, errno, "unable to allocate memory for new filename");
+			goto err_free_ranges;
+		}
+		strncpy(dstfname, filename, strlen(filename));
+		strncat(dstfname, FILESUFFIX, strlen(FILESUFFIX));
+	}
 
 //---------------------------------------------------------------------------//
 // Setup                                                                     //
@@ -1166,7 +1190,7 @@ int main(int argc, char **argv) {
 	/* libelf-library won't work if you don't tell it the ELF version */
 	if (elf_version(EV_CURRENT) == EV_NONE) {
 		error(0, 0, "ELF library initialization failed: %s", elf_errmsg(-1));
-		goto err_free_ranges;
+		goto err_free_dstfname;
 	}
 
 	// file descriptor of source file
@@ -1174,7 +1198,7 @@ int main(int argc, char **argv) {
 	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0) {
 		error(0, errno, "unable to open %s", filename);
-		goto err_free_ranges;
+		goto err_free_dstfname;
 	}
 	// ELF representation of source file
 	Elf *srce;
@@ -1183,27 +1207,12 @@ int main(int argc, char **argv) {
 		goto err_free_srcfd;
 	}
 
-	size_t fnamesz = strlen(filename) + strlen(FILESUFFIX) + 1;
-	if (fnamesz <= strlen(filename) || fnamesz <= strlen(FILESUFFIX)) {
-		error(0, 0, "resulting output filename too long");
-		goto err_free_srce;
-	}
-	errno = 0;
-	// filename of new file
-	char *dstfname = calloc(fnamesz, sizeof(char));
-	if(dstfname == NULL) {
-		error(0, errno, "unable to allocate memory for new filename");
-		goto err_free_srce;
-	}
-	strncpy(dstfname, filename, strlen(filename));
-	strncat(dstfname, FILESUFFIX, strlen(FILESUFFIX));
-
 	// file descriptor of new file
 	int dstfd;
 	errno = 0;
 	if ((dstfd = open(dstfname, O_WRONLY | O_CREAT, 0777)) < 0) {
 		error(0, errno, "unable to open %s", dstfname);
-		goto err_free_dstfname;
+		goto err_free_srce;
 	}
 	// ELF representation of new file
 	Elf *dste;
@@ -1590,11 +1599,13 @@ fixed:
 		error(0, errno, "unable to close %s", dstfname);
 		goto err_free_dstfname;
 	}
-	free(dstfname);
 	elf_end(srce);
 	errno = 0;
 	if (close(srcfd) < 0) {
 		error(EXIT_FAILURE, errno, "unable to close %s", filename);
+	}
+	if (!args_info.output_file_given) {
+		free(dstfname);
 	}
 	cmdline_parser_free(&args_info);
 
@@ -1630,14 +1641,16 @@ err_free_dstfd:
 	if (close(dstfd) < 0) {
 		error(0, errno, "unable to close %s", dstfname);
 	}
-err_free_dstfname:
-	free(dstfname);
 err_free_srce:
 	elf_end(srce);
 err_free_srcfd:
 	errno = 0;
 	if (close(srcfd) < 0) {
 		error(0, errno, "unable to close %s", filename);
+	}
+err_free_dstfname:
+	if (!args_info.output_file_given) {
+		free(dstfname);
 	}
 err_free_ranges:
 	if (ranges != NULL) {
