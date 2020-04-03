@@ -122,6 +122,9 @@ struct segmentRange {
 	unsigned long long section_start;
 };
 
+/**
+ * \brief List of [address ranges](@ref segmentRange)
+ */
 struct segmentRanges {
 	struct segmentRanges *next;
 	struct segmentRange range;
