@@ -1105,14 +1105,14 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	errno = 0;
 	struct layoutDescription *ret = calloc(1, sizeof(struct layoutDescription));
 	if (ret == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		return NULL;
 	}
 	ret->segmentNum = size;
 	errno = 0;
 	ret->segments = calloc(ret->segmentNum, sizeof(struct segmentRanges *));
 	if (ret->segments == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_ret;
 	}
 
@@ -1156,7 +1156,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	errno = 0;
 	ret->segmentList = calloc(1, sizeof(struct segmentRanges));
 	if (ret->segmentList == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_ret;
 	}
 	ret->listEntries = loads + oldEntries;
@@ -1184,7 +1184,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 			errno = 0;
 			current->next = calloc(1, sizeof(struct segmentRanges));
 			if (current->next == NULL) {
-				error(0, errno, "ran out of memory");
+				error(0, errno, "Out of memory");
 				goto err_free_ret;
 			}
 			current->next->range.offset = tmp->range.offset + tmp->range.shift;
@@ -1214,7 +1214,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 				errno = 0;
 				current->next = calloc(1, sizeof(struct segmentRanges));
 				if (current->next == NULL) {
-					error(0, errno, "ran out of memory");
+					error(0, errno, "Out of memory");
 					goto err_free_ret;
 				}
 				current->next->range.offset = tmp->range.offset + tmp->range.shift;
