@@ -712,6 +712,13 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_start)
 	return ret;
 }
 
+/**
+ * \brief Counts the loadable [address ranges](@ref segmentRange) in a list
+ *
+ * \param start The list
+ *
+ * \return Number of loadable [address ranges](@ref segmentRange)
+ */
 size_t countLoadableSegmentRanges(struct segmentRanges *start) {
 	size_t ret = 0;
 	for (struct segmentRanges *tmp = start; tmp; tmp = tmp->next) {
