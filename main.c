@@ -615,15 +615,17 @@ int countLOADs(Elf *elf) {
 	return count;
 }
 
-/*
- * Calculates offset of a section in new file.
+/**
+ * \brief Calculates offset of a section in new file.
  *
- * priorOffset: offset of section in original file
- * occupiedSpace: number of already occupied bytes in new file
+ * Contraint: new offset needs to be equal to prior offset modulo page size
+ * because LOAD segments require that `p_offset` (offset in file) is equal to
+ * `p_vaddr` (address in virtual address space) modulo page size.
  *
- * Contraint: new offset needs to be equal prior offset modulo page size because LOAD segments
- * require that p_offset (offset in file) is equal p_vaddr (address in virtual address space)
- * modulo page size.
+ * \param priorOffset Offset of section in original file
+ * \param occupiedSpace Number of already occupied bytes in new file
+ *
+ * \return Offset in new file
  */
 size_t calculateOffset(size_t priorOffset, size_t occupiedSpace) {
 	size_t priorPageOffset = calculateOffsetInPage(priorOffset);
