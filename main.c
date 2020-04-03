@@ -547,8 +547,15 @@ err_free_srcshdr2:
 	return -1;
 }
 
-/*
- * Rounds up value to the next multiple of base.
+/**
+ * \brief Rounds up `value` to the next multiple of `base`
+ *
+ * Computes a value `x` such that `x % base == 0`, `x >= value` and `x` is minimal.
+ *
+ * \param value The value for which the next bigger multiple is computed
+ * \param base The value of which the multiple is computed
+ *
+ * \returns The multiple of base
  */
 size_t roundUp(size_t value, size_t base) {
 	size_t tmp = value % base;
