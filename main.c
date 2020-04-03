@@ -1089,12 +1089,17 @@ void deleteDesc(struct layoutDescription *desc) {
 	free(desc);
 }
 
-/*
- * Calculates the new file layout.
+/**
+ * \brief Calculates the new file layout
  *
- * ranges, size: list of ranges in the new file
- * oldEntries: number of PHDR entries of original file that are NOT LOADs
- * elflass: Elf Class (32bit or 64bit)
+ * \param ranges Array of list of data rangesto incorporate in the new file
+ * \param size Size of ranges
+ * \param oldEntries Number of PHDR entries of original file that are NOT LOADs
+ * \param elfclass Elf Class (32bit or 64bit)
+ * \param permutateRanges Flag if the address ranges of sections should be permutated
+ *
+ * \return The [description of the file layout](@ref layoutDescription) of the
+ *         output file
  */
 struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, size_t oldEntries, int elfclass, int permutateRanges) {
 	errno = 0;
@@ -1112,6 +1117,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 
 	// number of LOAD entries in new PHDR table
+	/* Start with one for file header and one for PHDR table */
 	size_t loads = 2;
 	unsigned long long current_size = 0;
 	if (elfclass == ELFCLASS32) {
@@ -1122,10 +1128,12 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
+		/* determine the address ranges from the data ranges of a section */
 		ret->segments[i] = segments(&ranges[i], calculateOffset(ranges[i].data.section_offset, current_size));
 		loads += countLoadableSegmentRanges(ret->segments[i]);
 	}
 
+	/* check if user want to permutate address ranges */
 	if (permutateRanges) {
 		current_size = permutate(ret->segments, ret->segmentNum, current_size);
 		if (current_size == 0) {
@@ -1133,6 +1141,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 		}
 	}
 	else {
+		/* simply push the address ranges together */
 		for (size_t i = 1; i < size; i++) {
 			unsigned long long section_start = calculateOffset(ret->segments[i]->range.offset, current_size);
 			for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
@@ -1143,6 +1152,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 		}
 	}
 
+	/* join address ranges between sections */
 	errno = 0;
 	ret->segmentList = calloc(1, sizeof(struct segmentRanges));
 	if (ret->segmentList == NULL) {
@@ -1158,11 +1168,10 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	current->range.flags = ret->segments[1]->range.flags;
 	current->range.loadable = TRUE;
 	ret->listEntries--;
-	// FIXME: shift einkalkulieren
 	for (struct segmentRanges *tmp = ret->segments[1]->next; tmp; tmp = tmp->next) {
 		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE) || ((current->range.vaddr + current->range.msize) / PAGESIZE) + 1 == (tmp->range.vaddr / PAGESIZE)) {
-			/* data of tmp range will be loaded in the same or the following page as content of current range
-			 * => merge the ranges */
+			/* data of tmp range will be loaded in the same or the following
+			 * page as content of current range => merge the ranges */
 			current->range.fsize = tmp->range.offset + tmp->range.shift + tmp->range.fsize - current->range.offset;
 			current->range.msize = tmp->range.vaddr + tmp->range.msize - current->range.vaddr;
 			current->range.loadable |= tmp->range.loadable;
@@ -1170,6 +1179,8 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 			ret->listEntries--;
 		}
 		else {
+			/* data of tmp range will be loaded in a page farther away from the
+			 * content of current range => create new ranges */
 			errno = 0;
 			current->next = calloc(1, sizeof(struct segmentRanges));
 			if (current->next == NULL) {
@@ -1188,8 +1199,9 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	for (size_t i = 2; i < size; i++) {
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
 			if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE) || ((current->range.vaddr + current->range.msize) / PAGESIZE) + 1 == (tmp->range.vaddr / PAGESIZE)) {
-				/* data of tmp range will be loaded in the same or the following page as content of current range
-				 * => merge the ranges */
+				/* data of tmp range will be loaded in the same or the
+				 * following page as content of current range => merge the
+				 * ranges */
 				current->range.fsize = tmp->range.offset + tmp->range.shift + tmp->range.fsize - current->range.offset;
 				current->range.msize = tmp->range.vaddr + tmp->range.msize - current->range.vaddr;
 				current->range.loadable |= tmp->range.loadable;
@@ -1197,6 +1209,8 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 				ret->listEntries--;
 			}
 			else {
+				/* data of tmp range will be loaded in a page farther away from
+				 * the content of current range => create new ranges */
 				errno = 0;
 				current->next = calloc(1, sizeof(struct segmentRanges));
 				if (current->next == NULL) {
@@ -1214,11 +1228,15 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 		}
 	}
 
+	/* insert PHDR table */
 	current = ret->segmentList;
 	for (size_t i = 0; i < size; i++) {
 		size_t entry_size = 0;
 		unsigned long long phdr_vaddr = 0;
 		unsigned long long phdr_start = 0;
+		/* determine which start addresses the PHDR table would have if it were
+		 * inserted after section i (i == 0 meaning inserting after file
+		 * header) */
 		if (i == 0) {
 			if (elfclass == ELFCLASS32) {
 				phdr_start = roundUp(sizeof(Elf32_Ehdr), PHDR32ALIGN);
@@ -1245,7 +1263,9 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 			}
 		}
 
+		/* check if PHDR table fits in the space in memory after section i */
 		if (i == size - 1) {
+			/* insert after all sections */
 			// untested
 			// FIXME: Aligment not given after NOBITS sections
 			unsigned long long table_size = 0;
@@ -1314,6 +1334,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 done:
 	calculateShift(ranges, ret->segments, size);
 
+	/* determine start of SHDR table */
 	if (elfclass == ELFCLASS32) {
 		ret->shdr_start = roundUp(current_size, SHDR32ALIGN);
 	}
