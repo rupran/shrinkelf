@@ -762,6 +762,14 @@ int contains(struct segmentRanges * segment, Chain *range) {
 	return FALSE;
 }
 
+/**
+ * \brief Computes the section and data shift of all [data ranges](@ref range)
+ *        from the shift of the [address range](@ref segmentRange)
+ *
+ * \param ranges Array of list of [data ranges](@ref range)
+ * \param segments Array of list of [address ranges](@ref segmentRange)
+ * \param size Size of these arrays
+ */
 void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size) {
 	for (size_t i = 1; i < size; i++) {
 		for (struct segmentRanges *tmp = segments[i]; tmp; tmp = tmp->next) {
