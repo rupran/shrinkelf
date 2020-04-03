@@ -886,6 +886,11 @@ err_free_perm:
 	return NULL;
 }
 
+/**
+ * \brief Destructor for ::permutation
+ *
+ * \param perm The ::permutation to free
+ */
 void deletePermutation(struct permutation *perm) {
 	if (perm == NULL) {
 		return;
