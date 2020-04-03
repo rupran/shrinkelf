@@ -1348,8 +1348,12 @@ err_free_ret:
 	return NULL;
 }
 
-/*
- * Calculates the size of a section.
+/**
+ * \brief Calculates the size of a section
+ *
+ * \param section List of data ranges in a section
+ *
+ * \return The size of the section
  */
 unsigned long long calculateSectionSize(Chain *section) {
 	unsigned long long size = 0;
