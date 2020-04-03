@@ -964,23 +964,39 @@ void evaluate(struct permutation *perm, struct segmentRanges *segments) {
 	}
 }
 
+/**
+ * \brief recursive backtracking algorithm for permutation of [address ranges]
+ * (@ref segmentRange)
+ *
+ * \param perm The state of the algorithm
+ * \param segments The address ranges to permutate
+ * \param index The current position where a address range is inserted (doubles
+ *              as depth of recursion)
+ */
 void recursive_permutate(struct permutation *perm, struct segmentRanges *segments, unsigned long long index) {
 	if (index > perm->numEntries) {
+		/* all address ranges are inserted */
 		evaluate(perm, segments);
 		return;
 	}
 
 	if (index == 1 && perm->tmp[0] == ULLONG_MAX) {
+		/* first address range is constrained by the first element of segments */
 		recursive_permutate(perm, segments, index + 1);
 	}
 	else if (index == perm->numEntries && perm->tmp[perm->numEntries - 1] == ULLONG_MAX) {
+		/* last address range is constrained by the last element of segments */
 		recursive_permutate(perm, segments, index + 1);
 	}
 	else {
 		for (unsigned long long i = 0; i < perm->numEntries; i++) {
+			/* check if range is not inserted yet */
 			if (perm->tmp[i] == 0) {
+				/* insert range temporary */
 				perm->tmp[i] = index;
+				/* try every possible permutation with the remaining ranges */
 				recursive_permutate(perm, segments, index + 1);
+				/* remove range to try the next for this position */
 				perm->tmp[i] = 0;
 			}
 		}
