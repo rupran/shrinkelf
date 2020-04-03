@@ -605,20 +605,6 @@ int contains(struct segmentRanges * segment, Chain *range) {
 	return FALSE;
 }
 
-signed long long calculateSectionShift(Chain * range, struct segmentRanges *segments) {
-	unsigned long long section_start = ULLONG_MAX;
-	for (Chain *tmp = range; tmp; tmp = tmp->next) {
-		for (struct segmentRanges *tmpSeg = segments; tmpSeg; tmpSeg = tmpSeg->next) {
-			if(contains(tmpSeg, tmp)) {
-				if(tmp->data.section_offset + tmpSeg->range.shift < section_start) {
-					section_start = tmp->data.section_offset + tmpSeg->range.shift;
-				}
-			}
-		}
-	}
-	return section_start - range->data.section_offset;
-}
-
 void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size) {
 	for (size_t i = 1; i < size; i++) {
 		for (struct segmentRanges *tmp = segments[i]; tmp; tmp = tmp->next) {
@@ -782,7 +768,6 @@ void recursive_permutate(struct permutation *perm, struct segmentRanges *segment
 			}
 		}
 	}
-	return;
 }
 
 void segmentOffsets(struct permutation *perm, struct segmentRanges *segments, unsigned long long current_size) {
