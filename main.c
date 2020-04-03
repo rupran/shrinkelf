@@ -747,6 +747,14 @@ void deleteSegmentRanges(struct segmentRanges *start) {
 	}
 }
 
+/**
+ * \brief Checks if a [address range](@ref segmentRange) contains a [data range](@ref range)
+ *
+ * \param segment The address range
+ * \param range The data range
+ *
+ * \return Value indicating if the address range contains the data range
+ */
 int contains(struct segmentRanges * segment, Chain *range) {
 	if (range->data.section_offset + range->data.to <= segment->range.offset + segment->range.fsize && range->data.section_offset + range->data.from >= segment->range.offset) {
 		return TRUE;
