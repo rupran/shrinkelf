@@ -64,18 +64,19 @@ typedef struct range{
 	unsigned int d_version;
 } Range;
 
-/*
- * Information about memory layout
- *
- * loadable: flag if range is part of a LOAD segment
- * flags, align: flags and alignment of containing segment
- * from, to: start and end of range in memory as virtual addresses
+/**
+ * \brief Information about memory layout of the corresponding data range
  */
 struct address_space_info{
+	/** \brief Flag if the range is part of a LOAD segment */
 	int loadable;
+	/** \brief Flags of the containing segment */
 	unsigned long long flags;
+	/** \brief Alignment requirement of the containing segment */
 	unsigned long long align;
+	/** \brief Start address of the data range in memory */
 	unsigned long long from;
+	/** \brief End address (exclusive) of the data range in memory */
 	unsigned long long to;
 };
 
