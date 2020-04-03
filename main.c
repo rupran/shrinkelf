@@ -80,8 +80,9 @@ struct address_space_info{
 	unsigned long long to;
 };
 
-/*
- * List of data ranges and associated address space description
+/**
+ * \brief List of [data ranges](@ref range) and associated [address space description]
+ *        (@ref address_space_info)
  */
 typedef struct chain{
 	Range data;
