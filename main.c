@@ -591,18 +591,18 @@ int countLOADs(Elf *elf) {
 	// number of segments in file
 	size_t phdrnum = 0;
 	if (elf_getphdrnum(elf, &phdrnum) != 0) {
-		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		return -1;
 	}
 	errno = 0;
 	GElf_Phdr *phdr = calloc(1, sizeof(GElf_Phdr));
 	if (phdr == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		return -1;
 	}
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(elf, i, phdr) == NULL) {
-			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 			free(phdr);
 			return -1;
 		}
