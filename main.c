@@ -1379,12 +1379,13 @@ int main(int argc, char **argv) {
 	}
 
 	if (args_info.inputs_num != 1) {
-		// no file or too many files
+		/* no file or too many files */
 		error(0, 0, "No input file or too many input files (use -h for help)");
 		goto err_free_args_info;
 	}
 	char *filename = args_info.inputs[0];
 
+	/* parse ranges to keep */
 	Chain *ranges = NULL;
 	for (size_t i = 0; i < args_info.keep_given; i++) {
 		char *split = strpbrk(args_info.keep_arg[i], ":-");
@@ -1434,8 +1435,10 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	/* determine output file name */
 	char *dstfname;
 	if (args_info.output_file_given) {
+		/* user specified output file name */
 		if(strcmp(filename, args_info.output_file_arg) == 0) {
 			error(0, 0, "input and output file are the same");
 			goto err_free_ranges;
@@ -1443,13 +1446,13 @@ int main(int argc, char **argv) {
 		dstfname = args_info.output_file_arg;
 	}
 	else {
+		/* generate own output file name */
 		size_t fnamesz = strlen(filename) + strlen(FILESUFFIX) + 1;
 		if (fnamesz <= strlen(filename) || fnamesz <= strlen(FILESUFFIX)) {
 			error(0, 0, "resulting output filename too long");
 			goto err_free_ranges;
 		}
 		errno = 0;
-		// filename of new file
 		dstfname = calloc(fnamesz, sizeof(char));
 		if(dstfname == NULL) {
 			error(0, errno, "unable to allocate memory for new filename");
@@ -1468,28 +1471,28 @@ int main(int argc, char **argv) {
 		goto err_free_dstfname;
 	}
 
-	// file descriptor of source file
+	// file descriptor of input file
 	int srcfd;
 	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0) {
 		error(0, errno, "unable to open %s", filename);
 		goto err_free_dstfname;
 	}
-	// ELF representation of source file
+	// ELF representation of input file
 	Elf *srce;
 	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
 		error(0, 0, "could not retrieve ELF structures from source file: %s", elf_errmsg(-1));
 		goto err_free_srcfd;
 	}
 
-	// file descriptor of new file
+	// file descriptor of output file
 	int dstfd;
 	errno = 0;
 	if ((dstfd = open(dstfname, O_WRONLY | O_CREAT, 0777)) < 0) {
 		error(0, errno, "unable to open %s", dstfname);
 		goto err_free_srce;
 	}
-	// ELF representation of new file
+	// ELF representation of output file
 	Elf *dste;
 	if ((dste = elf_begin(dstfd, ELF_C_WRITE, NULL)) == NULL) {
 		error(0, 0, "could not create ELF structures for new file: %s", elf_errmsg(-1));
@@ -1508,14 +1511,14 @@ int main(int argc, char **argv) {
 //---------------------------------------------------------------------------//
 // Copy executable header                                                    //
 //---------------------------------------------------------------------------//
-	// ELF class of source file
+	// ELF class of input file
 	int elfclass;
 	if ((elfclass = gelf_getclass(srce)) == ELFCLASSNONE) {
 		error(0, 0, "could not retrieve ELF class from source file");
 		goto err_free_dste;
 	}
 	errno = 0;
-	// executable header of source file
+	// executable header of input file
 	GElf_Ehdr *srcehdr = calloc(1, sizeof(GElf_Ehdr));
 	if(srcehdr == NULL) {
 		error(0, errno, "unable to allocate memory for executable header of source file");
@@ -1525,7 +1528,7 @@ int main(int argc, char **argv) {
 		error(0, 0, "could not retrieve executable header from source file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
-	// executable header of new file
+	// executable header of output file
 	GElf_Ehdr *dstehdr;
 	/*
 	 * gelf_newehdr sets automatically the magic numbers of an ELF header,
@@ -1558,7 +1561,7 @@ int main(int argc, char **argv) {
 //---------------------------------------------------------------------------//
 // Copy program headers                                                      //
 //---------------------------------------------------------------------------//
-	// number of sections in source file
+	// number of sections in input file
 	size_t scnnum = 0;
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
 		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
@@ -1577,7 +1580,7 @@ int main(int argc, char **argv) {
 	deleteList(ranges);
 	ranges = NULL;
 
-	// number of segments in source file
+	// number of segments in input file
 	size_t phdrnum = 0;
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
 		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
@@ -1585,7 +1588,7 @@ int main(int argc, char **argv) {
 	}
 	// FIXME: näher an for-Schleife
 	errno = 0;
-	// current PHDR entry of source file
+	// current PHDR entry of input file
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
 		error(0, errno, "ran out of memory");
@@ -1597,22 +1600,22 @@ int main(int argc, char **argv) {
 	if (loads == -1) {
 		goto err_free_srcphdr;
 	}
-	// description of layout of new file
+	// description of layout of output file
 	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass, args_info.permutate_given);
 	if (desc == NULL) {
 		goto err_free_srcphdr;
 	}
-	// PHDR table of new file
 	dstehdr->e_phoff = desc->phdr_start;
+	// PHDR table of output file
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, desc->phdr_entries);
 	if (dstphdrs == NULL) {
 		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
 		goto err_free_desc;
 	}
 
-	// index of current PHDR entry in new file
+	// index of current PHDR entry in output file
 	size_t new_index = 0;
-	// FIXME: comments
+	// flag if the current LOAD segment is the first of the input file
 	int first_load = TRUE;
 	/* construct new PHDR table from old PHDR table */
 	for (size_t i = 0; i < phdrnum; i++) {
@@ -1622,7 +1625,8 @@ int main(int argc, char **argv) {
 		}
 
 		if (srcphdr->p_type != PT_LOAD) {
-			/* adopt values of non-LOAD segments to fix them up later */
+			/* copy values of non-LOAD segments - addresses and offsets will be
+			 * fixed later */
 			dstphdrs[new_index].p_type = srcphdr->p_type;
 			dstphdrs[new_index].p_offset = srcphdr->p_offset;
 			dstphdrs[new_index].p_vaddr = srcphdr->p_vaddr;
@@ -1634,7 +1638,8 @@ int main(int argc, char **argv) {
 			new_index++;
 		}
 		else if (first_load) {
-			/* replace first LOAD segment with all LOAD segments of new file */
+			/* replace first LOAD segment of input file with all LOAD segments
+			 * of output file */
 			first_load = FALSE;
 
 			for (struct segmentRanges *tmp = desc->segmentList; tmp; tmp = tmp->next) {
@@ -1664,8 +1669,9 @@ int main(int argc, char **argv) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
 			for (size_t j = 0; j < desc->segmentNum; j++) {
 				for (struct segmentRanges *tmp = desc->segments[j]; tmp; tmp = tmp->next) {
+					// FIXME
 					// if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset + dstphdrs[i].p_filesz <= tmp->range.offset + tmp->range.fsize) {
-					/* ^ won't work because of segments containing more than one section */
+					/* ^ won't work because segments don't contain more than one section */
 					if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->range.offset + tmp->range.fsize) {
 						dstphdrs[i].p_offset += tmp->range.shift;
 						goto fixed;
@@ -1674,7 +1680,7 @@ int main(int argc, char **argv) {
 			}
 fixed:
 			if (dstphdrs[i].p_type == PT_PHDR) {
-				/* fixup PHDR segment */
+				/* fix up PHDR segment */
 				dstphdrs[i].p_vaddr = desc->phdr_vaddr;
 				dstphdrs[i].p_paddr = dstphdrs[i].p_vaddr;
 				dstphdrs[i].p_offset = desc->phdr_start;
@@ -1693,21 +1699,21 @@ fixed:
 // Copy sections and section headers                                         //
 //---------------------------------------------------------------------------//
 	errno = 0;
-	// current section header of source file
+	// current section header of input file
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "unable to allocate memory for source shdr structure");
 		goto err_free_desc;
 	}
 	errno = 0;
-	// current section header of new file
+	// current section header of output file
 	GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
 		error(0, errno, "unable to allocate memory for new shdr structure");
 		goto err_free_srcshdr;
 	}
 
-	// current section of source file
+	// current section of input file
 	Elf_Scn *srcscn = NULL;
 	/* lib creates section 0 automatically so we start with section 1 */
 	for (size_t i = 1; i < scnnum; i++) {
@@ -1731,7 +1737,7 @@ fixed:
 			goto err_free_dstshdr;
 		}
 
-		/* allocate buffers for the data of the new file */
+		/* allocate buffers for the data of the output file */
 		for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 			errno = 0;
 			tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
@@ -1741,9 +1747,9 @@ fixed:
 			}
 		}
 
-		// current data of current section of source file
+		// current data of current section of input file
 		Elf_Data *srcdata = NULL;
-		/* copy data in data buffers for new file */
+		/* copy data in data buffers for output file */
 		while ((srcdata = elf_getdata(srcscn, srcdata)) != NULL) {
 			if (srcdata->d_buf == NULL) {
 				/* section is NOBITS section => no data to copy */
@@ -1758,7 +1764,8 @@ fixed:
 				}
 
 				if (srcdata_end <= tmp->data.from) {
-					/* source data ends before range (and the following range because the list is sorted) begins */
+					/* source data ends before range (and the following range
+					 * because the list is sorted) begins */
 					break;
 				}
 
@@ -1812,6 +1819,7 @@ fixed:
 			dstdata->d_size = tmp->data.to - tmp->data.from;
 		}
 
+		/* construct the SHDR entry of current section */
 		dstshdr->sh_info = srcshdr->sh_info;
 		dstshdr->sh_name = srcshdr->sh_name;
 		dstshdr->sh_type = srcshdr->sh_type;
