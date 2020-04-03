@@ -15,14 +15,21 @@
 #include "cmdline.h"
 
 
+/** \brief Page size to align segment ranges */
 #define PAGESIZE 0x1000
 #define FALSE 0x00
 #define TRUE 0xff
+/** \brief Alignment for PHDR table in file (32bit version) */
 #define PHDR32ALIGN 8
+/** \brief Alignment for PHDR table in file (64bit version) */
 #define PHDR64ALIGN 8
+/** \brief Alignment for SHDR table in file (32bit version) */
 #define SHDR32ALIGN 8
+/** \brief Alignment for SHDR table in file (64bit version) */
 #define SHDR64ALIGN 8
 
+/** \brief File suffix for output file appended to the input file when no
+ *         output file was specified */
 const char *FILESUFFIX = ".shrinked";
 
 /*
