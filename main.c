@@ -1045,14 +1045,26 @@ void segmentOffsets(struct permutation *perm, struct segmentRanges *segments, un
 	}
 }
 
+/**
+ * \brief Permutates the address ranges for all sections
+ *
+ * \param segments Array of list of address ranges
+ * \param size Size of `segments`
+ * \param current_size The currently occupied space in the output file
+ *
+ * \return The size of the output file after inserting all address ranges
+ */
 unsigned long long permutate(struct segmentRanges **segments, size_t size, unsigned long long current_size) {
 	for (size_t i = 1; i < size; i++) {
 		struct permutation *perm = createPermutation(segments, size, i, current_size);
 		if (perm == NULL) {
 			return 0;
 		}
+		/* permutate the address ranges of section i */
 		recursive_permutate(perm, segments[i], 1);
+		/* calculate the offsets of the address ranges of section i */
 		segmentOffsets(perm, segments[i], current_size);
+		/* update current size */
 		current_size = segments[i]->range.section_start + perm->size;
 		deletePermutation(perm);
 	}
