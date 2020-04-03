@@ -1087,7 +1087,8 @@ int main(int argc, char **argv) {
 //---------------------------------------------------------------------------//
 	struct gengetopt_args_info args_info;
 	if (cmdline_parser(argc, argv, &args_info) != 0) {
-		exit(EXIT_FAILURE);
+		error(0, 0, "could parse command line options (use -h for help)");
+		goto err_free_args_info;
 	}
 
 	if (args_info.inputs_num != 1) {
@@ -1214,8 +1215,8 @@ int main(int argc, char **argv) {
 		goto err_free_dste;
 	}
 
-	// XXX: Debug
-	elf_fill(0xcc);
+	/* Specify fill byte for padding - may be set for debugging purposes */
+	//elf_fill(0x00);
 
 //---------------------------------------------------------------------------//
 // Copy executable header                                                    //
@@ -1589,7 +1590,8 @@ fixed:
 	elf_end(srce);
 	errno = 0;
 	if (close(srcfd) < 0) {
-		error(EXIT_FAILURE, errno, "unable to close %s", filename);
+		error(0, errno, "Could not close %s", filename);
+		goto err_free_args_info;
 	}
 	if (!args_info.output_file_given) {
 		free(dstfname);
