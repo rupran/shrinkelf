@@ -729,6 +729,11 @@ size_t countLoadableSegmentRanges(struct segmentRanges *start) {
 	return ret;
 }
 
+/**
+ * \brief Destructor for a list of [segment ranges](@ref segmentRange)
+ *
+ * \param start The list to free
+ */
 void deleteSegmentRanges(struct segmentRanges *start) {
 	if (start == NULL) {
 		return;
