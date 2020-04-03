@@ -1374,7 +1374,7 @@ int main(int argc, char **argv) {
 //---------------------------------------------------------------------------//
 	struct gengetopt_args_info args_info;
 	if (cmdline_parser(argc, argv, &args_info) != 0) {
-		error(0, 0, "could parse command line options (use -h for help)");
+		error(0, 0, "Could not parse command line options (use -h for help)");
 		goto err_free_args_info;
 	}
 
@@ -1396,7 +1396,7 @@ int main(int argc, char **argv) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
-				error(0, errno, "Unable to allocate memory");
+				error(0, errno, "Out of memory");
 				goto err_free_ranges;
 			}
 			tmp->next = NULL;
@@ -1440,7 +1440,7 @@ int main(int argc, char **argv) {
 	if (args_info.output_file_given) {
 		/* user specified output file name */
 		if(strcmp(filename, args_info.output_file_arg) == 0) {
-			error(0, 0, "input and output file are the same");
+			error(0, 0, "Input and output file are the same");
 			goto err_free_ranges;
 		}
 		dstfname = args_info.output_file_arg;
@@ -1449,13 +1449,13 @@ int main(int argc, char **argv) {
 		/* generate own output file name */
 		size_t fnamesz = strlen(filename) + strlen(FILESUFFIX) + 1;
 		if (fnamesz <= strlen(filename) || fnamesz <= strlen(FILESUFFIX)) {
-			error(0, 0, "resulting output filename too long");
+			error(0, 0, "Resulting output filename too long");
 			goto err_free_ranges;
 		}
 		errno = 0;
 		dstfname = calloc(fnamesz, sizeof(char));
 		if(dstfname == NULL) {
-			error(0, errno, "unable to allocate memory for new filename");
+			error(0, errno, "Out of memory");
 			goto err_free_ranges;
 		}
 		strncpy(dstfname, filename, strlen(filename));
@@ -1475,13 +1475,13 @@ int main(int argc, char **argv) {
 	int srcfd;
 	errno = 0;
 	if ((srcfd = open(filename, O_RDONLY)) < 0) {
-		error(0, errno, "unable to open %s", filename);
+		error(0, errno, "Could not open input file %s", filename);
 		goto err_free_dstfname;
 	}
 	// ELF representation of input file
 	Elf *srce;
 	if ((srce = elf_begin(srcfd, ELF_C_READ, NULL)) == NULL) {
-		error(0, 0, "could not retrieve ELF structures from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve ELF structures from input file: %s", elf_errmsg(-1));
 		goto err_free_srcfd;
 	}
 
@@ -1489,13 +1489,13 @@ int main(int argc, char **argv) {
 	int dstfd;
 	errno = 0;
 	if ((dstfd = open(dstfname, O_WRONLY | O_CREAT, 0777)) < 0) {
-		error(0, errno, "unable to open %s", dstfname);
+		error(0, errno, "Could not open output file %s", dstfname);
 		goto err_free_srce;
 	}
 	// ELF representation of output file
 	Elf *dste;
 	if ((dste = elf_begin(dstfd, ELF_C_WRITE, NULL)) == NULL) {
-		error(0, 0, "could not create ELF structures for new file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not create ELF structures for output file: %s", elf_errmsg(-1));
 		goto err_free_dstfd;
 	}
 
@@ -1514,18 +1514,18 @@ int main(int argc, char **argv) {
 	// ELF class of input file
 	int elfclass;
 	if ((elfclass = gelf_getclass(srce)) == ELFCLASSNONE) {
-		error(0, 0, "could not retrieve ELF class from source file");
+		error(0, 0, "Could not retrieve ELF class from input file");
 		goto err_free_dste;
 	}
 	errno = 0;
 	// executable header of input file
 	GElf_Ehdr *srcehdr = calloc(1, sizeof(GElf_Ehdr));
 	if(srcehdr == NULL) {
-		error(0, errno, "unable to allocate memory for executable header of source file");
+		error(0, errno, "Out of memory");
 		goto err_free_dste;
 	}
 	if (gelf_getehdr(srce, srcehdr) == NULL) {
-		error(0, 0, "could not retrieve executable header from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve executable header from input file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
 	// executable header of output file
@@ -1542,7 +1542,7 @@ int main(int argc, char **argv) {
 	 * EI_ABIVERSION bytes.
 	 */
 	if ((dstehdr = gelf_newehdr(dste, elfclass)) == NULL) {
-		error(0, 0, "could not create executable header of new file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not create executable header of output file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
 	dstehdr->e_ident[EI_DATA] = srcehdr->e_ident[EI_DATA];
@@ -1554,7 +1554,7 @@ int main(int argc, char **argv) {
 	dstehdr->e_shstrndx = srcehdr->e_shstrndx;
 	dstehdr->e_entry = srcehdr->e_entry;
 	if (gelf_update_ehdr(dste, dstehdr) == 0) {
-		error(0, 0, "could not update ELF structures (Header): %s", elf_errmsg(-1));
+		error(0, 0, "Could not update ELF structures (Header): %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
 
@@ -1564,14 +1564,14 @@ int main(int argc, char **argv) {
 	// number of sections in input file
 	size_t scnnum = 0;
 	if (elf_getshdrnum(srce, &scnnum) != 0) {
-		error(0, 0, "could not retrieve number of sections from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve number of sections from input file: %s", elf_errmsg(-1));
 		goto err_free_srcehdr;
 	}
 	errno = 0;
 	// ranges to keep per section
 	Chain *section_ranges = calloc(scnnum, sizeof(Chain));
 	if (section_ranges == NULL) {
-		error(0, errno, "unable to allocate memory");
+		error(0, errno, "Out of memory");
 		goto err_free_srcehdr;
 	}
 	if (computeSectionRanges(srce, ranges, section_ranges, scnnum) != 0) {
@@ -1583,7 +1583,7 @@ int main(int argc, char **argv) {
 	// number of segments in input file
 	size_t phdrnum = 0;
 	if (elf_getphdrnum(srce, &phdrnum) != 0) {
-		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve number of segments from input file: %s", elf_errmsg(-1));
 		goto err_free_section_ranges;
 	}
 	// FIXME: näher an for-Schleife
@@ -1591,7 +1591,7 @@ int main(int argc, char **argv) {
 	// current PHDR entry of input file
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_section_ranges;
 	}
 
@@ -1609,7 +1609,7 @@ int main(int argc, char **argv) {
 	// PHDR table of output file
 	GElf_Phdr *dstphdrs = gelf_newphdr(dste, desc->phdr_entries);
 	if (dstphdrs == NULL) {
-		error(0, 0, "gelf_newphdr() failed: %s", elf_errmsg(-1));
+		error(0, 0, "Could not create PHDR table for output file: %s", elf_errmsg(-1));
 		goto err_free_desc;
 	}
 
@@ -1620,7 +1620,7 @@ int main(int argc, char **argv) {
 	/* construct new PHDR table from old PHDR table */
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
-			error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve phdr structure %lu of input file: %s", i, elf_errmsg(-1));
 			goto err_free_desc;
 		}
 
@@ -1702,14 +1702,14 @@ fixed:
 	// current section header of input file
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
-		error(0, errno, "unable to allocate memory for source shdr structure");
+		error(0, errno, "Out of memory");
 		goto err_free_desc;
 	}
 	errno = 0;
 	// current section header of output file
 	GElf_Shdr *dstshdr = calloc(1, sizeof(GElf_Shdr));
 	if (dstshdr == NULL) {
-		error(0, errno, "unable to allocate memory for new shdr structure");
+		error(0, errno, "Out of memory");
 		goto err_free_srcshdr;
 	}
 
@@ -1719,21 +1719,21 @@ fixed:
 	for (size_t i = 1; i < scnnum; i++) {
 		srcscn = elf_getscn(srce, i);
 		if (srcscn == NULL) {
-			error(0, 0, "could not retrieve source section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve section %lu of input file: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
 
 		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
-			error(0, 0, "could not retrieve source shdr structure for section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve shdr structure for section %lu of input file: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
 		Elf_Scn *dstscn = elf_newscn(dste);
 		if (dstscn == NULL) {
-			error(0, 0, "could not create section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not create section %lu in output file: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
 		if (gelf_getshdr(dstscn, dstshdr) == NULL) {
-			error(0, 0, "could not retrieve new shdr structure for section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve shdr structure for section %lu of output file: %s", i, elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
 
@@ -1742,7 +1742,7 @@ fixed:
 			errno = 0;
 			tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
 			if (tmp->data.buffer == NULL) {
-				error(0, errno, "Unable to allocate memory");
+				error(0, errno, "Out of memory");
 				goto err_free_dstshdr;
 			}
 		}
@@ -1802,13 +1802,13 @@ fixed:
 		for (Chain *tmp = &section_ranges[i]; tmp; tmp = tmp->next) {
 			Elf_Data *dstdata = elf_newdata(dstscn);
 			if (dstdata == NULL) {
-				error(0, 0, "could not add data to section %lu: %s", i, elf_errmsg(-1));
+				error(0, 0, "Could not add data to section %lu of output file: %s", i, elf_errmsg(-1));
 				goto err_free_dstshdr;
 			}
 
 			// FIXME: früher prüfen! In computeSectionRanges verschieben?
 			if (tmp->data.from % tmp->data.section_align != 0) {
-				error(0, 0, "in section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->data.section_align, tmp->data.from, tmp->data.section_align);
+				error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->data.section_align, tmp->data.from, tmp->data.section_align);
 				goto err_free_dstshdr;
 			}
 			dstdata->d_align = tmp->data.section_align;
@@ -1846,7 +1846,7 @@ fixed:
 		dstshdr->sh_link = srcshdr->sh_link;
 
 		if (gelf_update_shdr(dstscn, dstshdr) == 0) {
-			error(0, 0, "could not update ELF structures (Sections): %s", elf_errmsg(-1));
+			error(0, 0, "Could not update ELF structures (Sections): %s", elf_errmsg(-1));
 			goto err_free_dstshdr;
 		}
 	}
@@ -1855,7 +1855,7 @@ fixed:
 
 	/* write new ELF file */
 	if (elf_update(dste, ELF_C_WRITE) == -1) {
-		error(0, 0, "could not update ELF structures: %s", elf_errmsg(-1));
+		error(0, 0, "Could not write ELF structures to output file: %s", elf_errmsg(-1));
 		goto err_free_dstshdr;
 	}
 
@@ -1879,13 +1879,13 @@ fixed:
 	elf_end(dste);
 	errno = 0;
 	if (close(dstfd) < 0) {
-		error(0, errno, "unable to close %s", dstfname);
+		error(0, errno, "Could not close output file %s", dstfname);
 		goto err_free_dstfname;
 	}
 	elf_end(srce);
 	errno = 0;
 	if (close(srcfd) < 0) {
-		error(0, errno, "Could not close %s", filename);
+		error(0, errno, "Could not close input file %s", filename);
 		goto err_free_args_info;
 	}
 	if (!args_info.output_file_given) {
@@ -1923,14 +1923,14 @@ err_free_dste:
 err_free_dstfd:
 	errno = 0;
 	if (close(dstfd) < 0) {
-		error(0, errno, "unable to close %s", dstfname);
+		error(0, errno, "Could not close output file %s", dstfname);
 	}
 err_free_srce:
 	elf_end(srce);
 err_free_srcfd:
 	errno = 0;
 	if (close(srcfd) < 0) {
-		error(0, errno, "unable to close %s", filename);
+		error(0, errno, "Could not close input file %s", filename);
 	}
 err_free_dstfname:
 	if (!args_info.output_file_given) {
