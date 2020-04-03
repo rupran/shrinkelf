@@ -783,6 +783,13 @@ void calculateShift(Chain *ranges, struct segmentRanges **segments, size_t size)
 	}
 }
 
+/**
+ * \brief Size of a list of [segmentRanges](@ref segmentRange)
+ *
+ * \param segments The list
+ *
+ * \return Its size
+ */
 unsigned long long numEntries(struct segmentRanges *segments) {
 	unsigned long long ret = 0;
 	for (struct segmentRanges *tmp = segments; tmp; tmp = tmp->next) {
