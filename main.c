@@ -32,25 +32,35 @@
  *         output file was specified */
 const char *FILESUFFIX = ".shrinked";
 
-/*
- * Description of data range to keep using file layout.
+/**
+ * \brief Data range to keep
  *
- * section_offset, section_align: offset and alignment of containing section
- * from, to: start and end (exclusive) of range based on start of containing section
- * section_shift: shift of containing section in new file; negative values mean a shift toward address 0
- * data_shift: shift of range inside of containing section; negative values mean a shift towards start of section
- * buffer: buffer for data described by this struct
- * d_type, d_version: values of corresponding members of Elf_Data library struct
+ * A range of data that the user wants to keep. Addresses are relativ to the
+ * start address of the containing section and based on the file
+ * representation.
  */
 typedef struct range{
+	/** \brief Start address of the data range relativ to its containing
+	 *         section */
 	unsigned long long from;
+	/** \brief End address (exclusive) of the data range relativ to its
+	 *         containing section */
 	unsigned long long to;
+	/** \brief Offset of the containing section in the file */
 	unsigned long long section_offset;
+	/** \brief Alignment requirement of the containing section */
 	unsigned long long section_align;
+	/** \brief Shift of the containing section in the file. Negative values
+	 *         mean a shift towards the beginning of the file */
 	signed long long section_shift;
+	/** \brief Shift of the data range in its section. Negative values mean a
+	 *         shift towards the beginning of the section */
 	signed long long data_shift;
+	/** \brief Buffer for the data described by this struct */
 	char *buffer;
+	/** \brief Values of corresponding members of Elf_Data library struct */
 	Elf_Type d_type;
+	/** \brief Values of corresponding members of Elf_Data library struct */
 	unsigned int d_version;
 } Range;
 
