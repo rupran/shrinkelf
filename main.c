@@ -567,6 +567,13 @@ size_t roundUp(size_t value, size_t base) {
 	}
 }
 
+/**
+ * \brief Calculates the offset of a address in its page
+ *
+ * \param addr The address
+ *
+ * \return The offset
+ */
 size_t calculateOffsetInPage(size_t addr) {
 	return addr % PAGESIZE;
 }
