@@ -653,7 +653,15 @@ static int cmp (const void *p1, const void *p2) {
 	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
 }
 
-// FIXME: comment
+/**
+ * \brief Constructs the [address ranges](@ref segmentRange) of a section
+ *
+ * \param section List of [data ranges](@ref range) of a section
+ * \param section_start Start address of this section in the new file
+ *
+ * \return A list of [address ranges](@ref segmentRange) fit for rearrangement
+ *         or `NULL` in case of an error
+ */
 struct segmentRanges *segments(Chain *section, unsigned long long section_start) {
 	if (section == NULL) {
 		return NULL;
@@ -675,14 +683,16 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_start)
 	current->range.section_start = section_start;
 	for(Chain *tmp = section->next; tmp; tmp = tmp->next) {
 		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->as.from / PAGESIZE)) {
-			/* data of tmp range will be loaded in the same page as content of current range
-			 * => merge the ranges */
+			/* data of tmp range will be loaded in the same page as content of
+			 * current range => merge the ranges */
 			current->range.fsize = tmp->data.section_offset + tmp->data.to - current->range.offset;
 			current->range.msize = tmp->as.to - current->range.vaddr;
 			current->range.loadable |= tmp->as.loadable;
 			current->range.flags |= tmp->as.flags;
 		}
 		else {
+			/* data of tmp range will not be loaded in the same page as content
+			 * of current range => create new range */
 			errno = 0;
 			current->next = calloc(1, sizeof(struct segmentRanges));
 			if (current->next == NULL) {
