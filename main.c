@@ -578,9 +578,12 @@ size_t calculateOffsetInPage(size_t addr) {
 	return addr % PAGESIZE;
 }
 
-/*
- * Counts LOAD program headers.
- * Returns -1 in case of an error.
+/**
+ * \brief Counts LOAD program headers in an ELF file
+ *
+ * \param elf The file
+ *
+ * \returns The number of LOAD program headers or -1 in case of an error
  */
 int countLOADs(Elf *elf) {
 	int count = 0;
