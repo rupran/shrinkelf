@@ -247,8 +247,10 @@ int insert(Chain *start, Chain *elem) {
 	return 0;
 }
 
-/*
- * Frees a complete list.
+/**
+ * \brief Destructor for a list of [ranges](@ref range)
+ *
+ * \param start List to free
  */
 void deleteList(Chain *start) {
 	Chain *tmp = start->next;
