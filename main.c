@@ -907,23 +907,40 @@ void deletePermutation(struct permutation *perm) {
 	free(perm);
 }
 
-// result und size aktualisieren
+/**
+ * \brief Evaluates the current permutation of address ranges
+ *
+ * Computes the size of the section if the address ranges it contains are
+ * inserted in the ordering dscribed by the current permutation. Updates the
+ * currantly best permutation and its resulting size if needed.
+ *
+ * \param perm The [state of the permutation algorithm](@ref permutation)
+ *             containing the current and the best permutation
+ * \param segments The address ranges to insert
+ */
 void evaluate(struct permutation *perm, struct segmentRanges *segments) {
 	unsigned long long start = 0;
 	unsigned long long end = 0;
 
+	/* look up for every position (ranges from 1 to the number of segments)
+	 * which segment to insert */
 	for (unsigned long long i = 1; i <= perm->numEntries; i++) {
 		if (i == 1 && perm->tmp[0] == ULLONG_MAX) {
+			/* first position and the (in the input file) first segment is
+			 * marked to be inserted first */
 			start = segments->range.offset;
 			end = segments->range.offset + segments->range.fsize;
 			continue;
 		}
 		else if (i == perm->numEntries && perm->tmp[perm->numEntries - 1] == ULLONG_MAX) {
+			/* last position and the (in the input file) last segment is marked
+			 * to be inserted last */
 			struct segmentRanges *tmp = get(segments, perm->numEntries - 1);
 			end = calculateOffset(tmp->range.offset, end) + tmp->range.fsize;
 			break;
 		}
 		else {
+			/* search the segment with the index for the current position */
 			for (unsigned long long j = 0; j < perm->numEntries; j++) {
 				if (i == perm->tmp[j]) {
 					struct segmentRanges *tmp = get(segments, j);
@@ -939,6 +956,7 @@ void evaluate(struct permutation *perm, struct segmentRanges *segments) {
 
 	unsigned long long size = end - start;
 	if (size < perm->size) {
+		/* update currently best permutation if current permutation is better */
 		for (unsigned long long i = 0; i < perm->numEntries; i++) {
 			perm->result[i] = perm->tmp[i];
 		}
