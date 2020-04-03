@@ -1003,21 +1003,33 @@ void recursive_permutate(struct permutation *perm, struct segmentRanges *segment
 	}
 }
 
+/**
+ * \brief Computes the offset of the address ranges in the output file
+ *
+ * \param perm The order in which the ranges are inserted
+ * \param segments The ranges that are inserted
+ * \param current_size The already occupied size in the output file
+ */
 void segmentOffsets(struct permutation *perm, struct segmentRanges *segments, unsigned long long current_size) {
 	unsigned long long section_start = 0;
 	for (unsigned long long i = 1; i <= perm->numEntries; i++) {
 		if (i == 1 && perm->result[0] == ULLONG_MAX) {
+			/* the first element of segments is constrained to the first
+			 * position */
 			section_start = calculateOffset(segments->range.offset, current_size);
 			segments->range.shift = section_start - segments->range.offset;
 			segments->range.section_start = section_start;
 			current_size = section_start + segments->range.fsize;
 		}
 		else if (i == perm->numEntries && perm->result[perm->numEntries - 1] == ULLONG_MAX) {
+			/* the last element of segments is constrained to the last position */
 			struct segmentRanges *tmp = get(segments, perm->numEntries - 1);
 			tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - tmp->range.offset;
 			tmp->range.section_start = section_start;
 		}
 		else {
+			/* search the element with the matching index for the current
+			 * position */
 			for (unsigned long long j = 0; j < perm->numEntries; j++) {
 				if (i == perm->result[j]) {
 					struct segmentRanges *tmp = get(segments, j);
