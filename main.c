@@ -1071,6 +1071,11 @@ unsigned long long permutate(struct segmentRanges **segments, size_t size, unsig
 	return current_size;
 }
 
+/**
+ * \brief Destructor for ::layoutDescription
+ *
+ * \param desc The layout description to free
+ */
 void deleteDesc(struct layoutDescription *desc) {
 	if (desc == NULL) {
 		return;
