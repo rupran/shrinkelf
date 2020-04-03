@@ -130,16 +130,18 @@ struct segmentRanges {
 	struct segmentRange range;
 };
 
-/*
- * Description of the new file layout
- *
- * phdr_start, phdr_entries: start address and number of entries of new PHDR table
- * shdr_start: start address of new SHDR table
+/**
+ * \brief Description of the new file layout
  */
 struct layoutDescription {
+	/** \brief Offset of PHDR table in new file */
 	unsigned long long phdr_start;
+	/** \brief Offset of PHDR table in memory after shrinking the original ELF
+	 *         file*/
 	unsigned long long phdr_vaddr;
+	/** \brief Number of entries in new PHDR table */
 	unsigned long long phdr_entries;
+	/** \brief Offset of SHDR table in new file*/
 	unsigned long long shdr_start;
 	struct segmentRanges** segments;
 	size_t segmentNum;
