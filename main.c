@@ -835,25 +835,25 @@ struct permutation * createPermutation(struct segmentRanges **segments, size_t s
 	errno = 0;
 	struct permutation *ret = calloc(1, sizeof(struct permutation));
 	if (ret == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		return NULL;
 	}
 	ret->numEntries = numEntries(segments[index]);
 	if (ret->numEntries >= ULLONG_MAX - 1) {
 		/* too many entries */
-		error(0, 0, "too many ranges to process");
+		error(0, 0, "Too many ranges to process");
 		goto err_free_perm;
 	}
 	errno = 0;
 	ret->tmp = calloc(ret->numEntries, sizeof(unsigned long long));
 	if (ret->tmp == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_perm;
 	}
 	errno = 0;
 	ret->result = calloc(ret->numEntries, sizeof(unsigned long long));
 	if (ret->result== NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_tmp;
 	}
 
