@@ -669,7 +669,7 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_start)
 	errno = 0;
 	struct segmentRanges *ret = calloc(1, sizeof(struct segmentRanges));
 	if (ret == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		return NULL;
 	}
 	ret->next = NULL;
@@ -696,7 +696,7 @@ struct segmentRanges *segments(Chain *section, unsigned long long section_start)
 			errno = 0;
 			current->next = calloc(1, sizeof(struct segmentRanges));
 			if (current->next == NULL) {
-				error(0, errno, "ran out of memory");
+				error(0, errno, "Out of memory");
 				return NULL;
 			}
 			current->next->range.offset = tmp->data.section_offset + tmp->data.from;
