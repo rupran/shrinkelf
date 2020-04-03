@@ -287,21 +287,21 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 	// storage for current section header of source file
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
-		error(0, errno, "unable to allocate memory for source shdr structure");
+		error(0, errno, "Out of memory");
 		return -1;
 	}
 
 	// number of segments in source file
 	size_t phdrnum = 0;
 	if (elf_getphdrnum(src, &phdrnum) != 0) {
-		error(0, 0, "could not retrieve number of segments from source file: %s", elf_errmsg(-1));
+		error(0, 0, "Could not retrieve number of segments from source file: %s", elf_errmsg(-1));
 		goto err_free_srcshdr2;
 	}
 	errno = 0;
 	// storage for current program header of source file
 	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
 	if (srcphdr == NULL) {
-		error(0, errno, "ran out of memory");
+		error(0, errno, "Out of memory");
 		goto err_free_srcshdr2;
 	}
 
@@ -312,12 +312,12 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 	for (size_t i = 0; i < section_number; i++) {
 		srcscn = elf_getscn(src, i);
 		if (srcscn == NULL) {
-			error(0, 0, "could not retrieve source section structure for section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve source section data for section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_srcphdr2;
 		}
 
 		if (gelf_getshdr(srcscn, srcshdr) == NULL) {
-			error(0, 0, "could not retrieve source shdr structure for section %lu: %s", i, elf_errmsg(-1));
+			error(0, 0, "Could not retrieve source shdr data for section %lu: %s", i, elf_errmsg(-1));
 			goto err_free_srcphdr2;
 		}
 
@@ -327,7 +327,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
-				error(0, errno, "unable to allocate memory");
+				error(0, errno, "Out of memory");
 				goto err_free_srcphdr2;
 			}
 			tmp->next = NULL;
@@ -377,7 +377,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			/* memory layout of section range */
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
-					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+					error(0, 0, "Could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 					goto err_free_srcphdr2;
 				}
 
@@ -439,7 +439,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
 			if (tmp == NULL) {
-				error(0, errno, "unable to allocate memory");
+				error(0, errno, "Out of memory");
 				goto err_free_srcphdr2;
 			}
 			tmp->next = NULL;
@@ -481,7 +481,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			/* memory layout of section range */
 			for (size_t j = 0; j < phdrnum; j++) {
 				if (gelf_getphdr(src, j, srcphdr) == NULL) {
-					error(0, 0, "could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
+					error(0, 0, "Could not retrieve source phdr structure %lu: %s", i, elf_errmsg(-1));
 					goto err_free_srcphdr2;
 				}
 
