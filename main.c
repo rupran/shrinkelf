@@ -268,8 +268,19 @@ void deleteList(Chain *start) {
 	}
 }
 
-/*
- * compute the ranges to keep per section and store them in array dest
+/**
+ * \brief Computes the ranges to keep per section and stores them in array `dest`
+ *
+ * \param src Original ELF file to get data about sections
+ * \param ranges Ranges specified via command line
+ * \param dest Array of lists of ranges; one list for each section in `src`
+ * \param section_number Number of sections in `src` and size of array `dest`
+ *
+ * \return
+ * Value | Meaning
+ * -----:|:-------
+ *     0 | success
+ *    -1 | error
  */
 int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_number) {
 	errno = 0;
@@ -310,7 +321,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			goto err_free_srcphdr2;
 		}
 
-		/* split ranges in section ranges and add layout data */
+		/* split ranges in section ranges and add layout data (ranges that end
+		 * in section i) */
 		while (current && current->data.to <= srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
@@ -322,21 +334,30 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 
 			/* determine start and end addresses of section range in file */
 			if (srcshdr->sh_type == SHT_NOBITS) {
+				/* NOBITS section don't have data in file */
 				tmp->data.from = 0;
 				tmp->data.to = 0;
 			}
 			else {
+				/* determine start of range under construction relativ to the
+				 * start of its containing section */
 				if (current->data.from < srcshdr->sh_offset) {
+					/* range under construction starts at the beginning of its
+					 * containing section */
 					tmp->data.from = 0;
 				}
 				else {
 					tmp->data.from = current->data.from - srcshdr->sh_offset;
 				}
 
+				/* determine end of range under construction relativ to the end
+				 * of its containing section */
 				if (current->data.to < srcshdr->sh_offset + srcshdr->sh_size) {
 					tmp->data.to = current->data.to - srcshdr->sh_offset;
 				}
 				else {
+					/* range under construction ends at the end of its
+					 * containing section */
 					tmp->data.to = srcshdr->sh_size;
 				}
 			}
@@ -361,7 +382,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				}
 
 				if (srcphdr->p_type != PT_LOAD) {
-					/* not a loadable segment */
+					/* not a loadable segment so it contains no data about the
+					 * memory layout of any part of the input file */
 					continue;
 				}
 
@@ -375,12 +397,15 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.align = srcphdr->p_align;
 				/* determine start and end addresses of section range in memory */
 				if (srcphdr->p_offset <= srcshdr->sh_offset) {
+					/* segment starts before section starts */
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				}
 				else {
+					/* segment starts after section starts */
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
 				}
 				if (srcshdr->sh_type == SHT_NOBITS) {
+					/* range contains whole NOBITS section */
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
 				else {
@@ -390,6 +415,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 
 			if (dest[i].data.to == 0) {
+				/* no list to insert tmp */
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
 				dest[i].data.section_offset = tmp->data.section_offset;
@@ -407,7 +433,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			current = current->next;
 		}
 
-		/* split ranges in section ranges and add layout data - edge case */
+		/* split ranges in section ranges and add layout data (range that
+		 * begins in section i but does not end there) */
 		if (current && current->data.from < srcshdr->sh_offset + (srcshdr->sh_type == SHT_NOBITS ? 0 : srcshdr->sh_size)) {
 			errno = 0;
 			Chain *tmp = calloc(1, sizeof(Chain));
@@ -419,16 +446,23 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 
 			/* determine start and end addresses of section range in file */
 			if (srcshdr->sh_type == SHT_NOBITS) {
+				/* NOBITS section don't have data in file */
 				tmp->data.from = 0;
 				tmp->data.to = 0;
 			}
 			else {
+				/* determine start of range under construction relativ to the
+				 * start of its containing section */
 				if (current->data.from < srcshdr->sh_offset) {
+					/* range under construction starts at the beginning of its
+					 * containing section */
 					tmp->data.from = 0;
 				}
 				else {
 					tmp->data.from = current->data.from - srcshdr->sh_offset;
 				}
+				/* range under construction ends at the end of its containing
+				 * section */
 				tmp->data.to = srcshdr->sh_size;
 			}
 
@@ -452,7 +486,8 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				}
 
 				if (srcphdr->p_type != PT_LOAD) {
-					/* not a loadable segment */
+					/* not a loadable segment so it contains no data about the
+					 * memory layout of any part of the input file */
 					continue;
 				}
 
@@ -466,12 +501,15 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.align = srcphdr->p_align;
 				/* determine start and end addresses of section range in memory */
 				if (srcphdr->p_offset <= srcshdr->sh_offset) {
+					/* segment starts before section starts */
 					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
 				}
 				else {
+					/* segment starts after section starts */
 					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
 				}
 				if (srcshdr->sh_type == SHT_NOBITS) {
+					/* range contains whole NOBITS section */
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
 				else {
@@ -481,6 +519,7 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 			}
 
 			if (dest[i].data.to == 0) {
+				/* no list to insert tmp */
 				dest[i].data.from = tmp->data.from;
 				dest[i].data.to = tmp->data.to;
 				dest[i].data.section_offset = tmp->data.section_offset;
