@@ -165,9 +165,21 @@ struct permutation {
 
 
 
-/*
- * Insert element elem in list start. List start is sorted.
- * Returns -1 if ranges overlap.
+/**
+ * \brief Inserts element in sorted list of [ranges](@ref range)
+ *
+ * Inserts element `elem` in sorted list `start` preserving its ordering. The
+ * list is sorted by the member `from` of [struct range](@ref range) in
+ * ascending order.
+ *
+ * \param start List in which the element is inserted
+ * \param elem Element to be inserted
+ *
+ * \return
+ * Value | Meaning
+ * -----:|:-------
+ *     0 | success
+ *    -1 | error
  */
 int insert(Chain *start, Chain *elem) {
 	if (elem->data.from < start->data.from) {
