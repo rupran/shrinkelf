@@ -820,6 +820,17 @@ struct segmentRanges * get(struct segmentRanges *segments, unsigned long long in
 	return ret;
 }
 
+/**
+ * \brief Constructor for ::permutation
+ *
+ * \param segments Array of lists of [address ranges](@ref segmentRange)
+ *                 imposing constraints on the permutation
+ * \param size The size of `segments`
+ * \param index The index for which a ::permutation is constructed
+ * \param current_size The currently occupied size in the new file
+ *
+ * \return The new ::permutation
+ */
 struct permutation * createPermutation(struct segmentRanges **segments, size_t size, size_t index, unsigned long long current_size) {
 	errno = 0;
 	struct permutation *ret = calloc(1, sizeof(struct permutation));
@@ -847,20 +858,23 @@ struct permutation * createPermutation(struct segmentRanges **segments, size_t s
 	}
 
 	if (current_size / PAGESIZE == (segments[index]->range.offset + segments[index]->range.fsize) / PAGESIZE) {
-		/* mark first element because its on the same page as the previous section */
+		/* mark first element because it is on the same page as the previous
+		 * section */
 		ret->tmp[0] = ULLONG_MAX;
 		ret->result[0] = ULLONG_MAX;
 	}
 	if (index != size - 1) {
 		struct segmentRanges * last = get(segments[index], numEntries(segments[index]) - 1);
 		if ((last->range.offset + last->range.fsize) / PAGESIZE == (segments[index + 1]->range.offset + segments[index + 1]->range.fsize) / PAGESIZE) {
-			/* mark last element because its on the same page as the next section */
+			/* mark last element because its on the same page as the next
+			 * section */
 			ret->tmp[ret->numEntries - 1] = ULLONG_MAX;
 			ret->result[ret->numEntries - 1] = ULLONG_MAX;
 		}
 	}
 
-	/* set section size - concecptionally - to infinit because it is not determined now */
+	/* set size of the section under the currently best permutation -
+	 * concecptionally - to infinity because it is not determined now */
 	ret->size = ULLONG_MAX;
 
 	return ret;
