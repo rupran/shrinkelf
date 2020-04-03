@@ -20,6 +20,8 @@
 #define TRUE 0xff
 #define PHDR32ALIGN 8
 #define PHDR64ALIGN 8
+#define SHDR32ALIGN 8
+#define SHDR64ALIGN 8
 
 const char *FILESUFFIX = ".shrinked";
 
@@ -1066,10 +1068,10 @@ done:
 	calculateShift(ranges, ret->segments, size);
 
 	if (elfclass == ELFCLASS32) {
-		ret->shdr_start = roundUp(current_size, sizeof(Elf32_Shdr));
+		ret->shdr_start = roundUp(current_size, SHDR32ALIGN);
 	}
 	else {
-		ret->shdr_start = roundUp(current_size, sizeof(Elf64_Shdr));
+		ret->shdr_start = roundUp(current_size, SHDR64ALIGN);
 	}
 	return ret;
 
