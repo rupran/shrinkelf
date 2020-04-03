@@ -90,19 +90,35 @@ typedef struct chain{
 	struct address_space_info as;
 } Chain;
 
-/*
- * Range that will be loaded. Combines multiple ranges given via command line if needed.
- * offset, fsize: offset and size in the original file
- * vaddr, msize: virtual start address and size in memory
+/**
+ * \brief Address range that can be permutated
+ *
+ * Range of addresses that can be rearranged to save space. Rearranged means
+ * that ordering of ranges in the input file may not be preserved. The address
+ * range can span over multiple [data ranges](@ref range) and the room between
+ * them.  A side effect of this is that there need not be data behind every
+ * address in this address range.
+ *
+ * Address ranges are constructed in such a way that [data ranges](@ref range)
+ * which are loaded in the same page reside in the same address range.
  */
 struct segmentRange {
+	/** \brief Offset of the range in the input file */
 	unsigned long long offset;
+	/** \brief Size of the range in the file */
 	unsigned long long fsize;
+	/** \brief Start address of the range in memory */
 	unsigned long long vaddr;
+	/** \brief Size of the range in memory */
 	unsigned long long msize;
+	/** \brief Flags of the containing LOAD segment */
 	unsigned long long flags;
+	/** \brief Shift of the range in the new file. Negative values mean a
+	 *          shift towards the beginning of the file */
 	signed long long shift;
+	/** \brief  Flag if the range is part of a LOAD segment */
 	int loadable;
+	/** \brief Offset of the containing section in the new file */
 	unsigned long long section_start;
 };
 
