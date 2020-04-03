@@ -1016,10 +1016,10 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 
 			if (phdr_vaddr < current->range.vaddr + current->range.msize) {
 				struct segmentRanges *ahead = ret->segments[i + 1];
-				if (ahead->range.vaddr >= phdr_vaddr + entry_size * (ret->listEntries - 1)) {
+				if (ahead->range.vaddr >= phdr_vaddr + entry_size * (ret->listEntries)) {
 					ret->phdr_start = phdr_start;
 					ret->phdr_vaddr = phdr_vaddr;
-					ret->phdr_entries = ret->listEntries - 1;
+					ret->phdr_entries = ret->listEntries;
 					if (ahead->range.offset + ahead->range.shift < ret->phdr_start + ret->phdr_entries * entry_size) {
 						signed long long shift = roundUp(ret->phdr_start + ret->phdr_entries * entry_size - (ahead->range.offset + ahead->range.shift), PAGESIZE);
 						for (size_t j = i + 1; j < size; j++) {
@@ -1036,7 +1036,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 			else {
 				int fits = TRUE;
 				for (struct segmentRanges *ahead = ret->segments[i + 1]; ahead; ahead = ahead->next) {
-					if (ahead->range.vaddr < phdr_vaddr + entry_size * (ret->listEntries - 1)) {
+					if (ahead->range.vaddr < phdr_vaddr + entry_size * (ret->listEntries)) {
 						fits = FALSE;
 					}
 				}
