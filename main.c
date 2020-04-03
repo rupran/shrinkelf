@@ -638,8 +638,16 @@ size_t calculateOffset(size_t priorOffset, size_t occupiedSpace) {
 	}
 }
 
-/*
- * Compare function for sorting PHDR table
+/**
+ * \brief Compare function for sorting PHDR table
+ *
+ * The ELF standard says that LOAD program headers are sorted by their virtual
+ * addresses in ascending order. This function is used as compare function for
+ * `qsort`.
+ *
+ * \param p1, p2 The program header to compare
+ *
+ * \return An integer indicating if `p1` is smaller, equal or bigger than `p2`
  */
 static int cmp (const void *p1, const void *p2) {
 	return ((GElf_Phdr *) p1)->p_vaddr - ((GElf_Phdr *) p2)->p_vaddr;
