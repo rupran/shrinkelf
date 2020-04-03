@@ -798,6 +798,14 @@ unsigned long long numEntries(struct segmentRanges *segments) {
 	return ret;
 }
 
+/**
+ * \brief Get element from list by index
+ *
+ * \param segments The list
+ * \param index The index of the element
+ *
+ * \return The element with the corresponding index
+ */
 struct segmentRanges * get(struct segmentRanges *segments, unsigned long long index) {
 	if (index == 0) {
 		return segments;
