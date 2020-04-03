@@ -149,10 +149,17 @@ struct layoutDescription {
 	unsigned long long listEntries;
 };
 
+/**
+ * \brief Permutation of [segment ranges](@ref segmentRange)
+ */
 struct permutation {
+	/** \brief Array of indexes, describing the current permutation */
 	unsigned long long *tmp;
+	/** \brief Array of indexes, describing the current optimum */
 	unsigned long long *result;
+	/** \brief Size of the arrays */
 	unsigned long long numEntries;
+	/** \brief Size of the segment ranges in ordering of the current optimum */
 	unsigned long long size;
 };
 
