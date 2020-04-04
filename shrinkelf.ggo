@@ -19,9 +19,9 @@ args "--unamed-opts=FILE"
 # option <long> <short> "<desc>" flag <on/off>
 
 
-option "keep" k "range to keep" string multiple
-option "permutate" p "permutate ranges" optional
-option "output-file" o "name of the output file" string optional
+option "keep" k "Keep given RANGE. Accepted formats are\n  'START-END' exclusve END\n  'START:LEN' LEN in bytes\nwith common prefixes for base" string typestr="RANGE" multiple
+option "permutate" p "Permutate ranges for potential smaller output file. WARNING: The used algorithm is in O(n!)" optional
+option "output-file" o "Name of the output file" string typestr="FILE" optional
 
 
 # section "section name" {sectiondesc="optional section description"}
