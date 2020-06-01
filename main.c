@@ -1169,7 +1169,15 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	current->range.loadable = TRUE;
 	ret->listEntries--;
 	for (struct segmentRanges *tmp = ret->segments[1]->next; tmp; tmp = tmp->next) {
-		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE)) {
+		// last memory page with content from the current range
+		unsigned long long currentPage = (current->range.vaddr + current->range.msize) / PAGESIZE;
+		// first memory page with content from the tmp range
+		unsigned long long tmpPage = tmp->range.vaddr / PAGESIZE;
+		// last file page with content from the current range
+		unsigned long long currentFilePage = (current->range.offset + current->range.fsize) / PAGESIZE;
+		// first file page with content from the tmp range
+		unsigned long long tmpFilePage = (tmp->range.offset + tmp->range.shift) / PAGESIZE;
+		if (currentPage == tmpPage || (currentPage + 1 == tmpPage && currentFilePage + 1 == tmpFilePage)) {
 			/* data of tmp range will be loaded in the same or the following
 			 * page as content of current range => merge the ranges */
 			current->range.fsize = tmp->range.offset + tmp->range.shift + tmp->range.fsize - current->range.offset;
@@ -1198,7 +1206,15 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	for (size_t i = 2; i < size; i++) {
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
-			if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE)) {
+			// last memory page with content from the current range
+			unsigned long long currentPage = (current->range.vaddr + current->range.msize) / PAGESIZE;
+			// first memory page with content from the tmp range
+			unsigned long long tmpPage = tmp->range.vaddr / PAGESIZE;
+			// last file page with content from the current range
+			unsigned long long currentFilePage = (current->range.offset + current->range.fsize) / PAGESIZE;
+			// first file page with content from the tmp range
+			unsigned long long tmpFilePage = (tmp->range.offset + tmp->range.shift) / PAGESIZE;
+			if (currentPage == tmpPage || (currentPage + 1 == tmpPage && currentFilePage + 1 == tmpFilePage)) {
 				/* data of tmp range will be loaded in the same or the
 				 * following page as content of current range => merge the
 				 * ranges */
@@ -1296,8 +1312,31 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 							}
 						}
 						current_size += shift;
+						// correct offset of LOAD PHDRs after inserting PHDR table
+						current->range.fsize += shift;
 						for (struct segmentRanges *tmp4 = current->next; tmp4; tmp4 = tmp4->next) {
-							tmp4->range.shift += shift;
+							tmp4->range.offset += shift;
+						}
+					}
+					if (current->next) {
+						// last memory page with content from the current range
+						unsigned long long currentPage = (current->range.vaddr + current->range.msize) / PAGESIZE;
+						// first memory page with content from the next range
+						unsigned long long tmpPage = current->next->range.vaddr / PAGESIZE;
+						// last file page with content from the current range
+						unsigned long long currentFilePage = (current->range.offset + current->range.fsize) / PAGESIZE;
+						// first file page with content from the next range
+						unsigned long long tmpFilePage = (current->next->range.offset + current->next->range.shift) / PAGESIZE;
+						if (currentPage + 1 == tmpPage && currentFilePage + 1 == tmpFilePage) {
+							/* data of next range will be loaded in the following
+							 * page as content of current range => merge the ranges */
+							current->range.fsize = current->next->range.offset + current->next->range.shift + current->next->range.fsize - current->range.offset;
+							current->range.msize = current->next->range.vaddr + current->next->range.msize - current->range.vaddr;
+							current->range.loadable |= current->next->range.loadable;
+							current->range.flags |= current->next->range.flags;
+							ret->listEntries--;
+							ret->phdr_entries--;
+							current->next = current->next->next;
 						}
 					}
 					goto done;
@@ -1326,12 +1365,35 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 						}
 					}
 					current_size += shift;
+					// correct offset of LOAD PHDRs after inserting PHDR table
+					current->range.fsize += shift;
 					for (struct segmentRanges *tmp4 = current->next; tmp4; tmp4 = tmp4->next) {
-						tmp4->range.shift += shift;
+						tmp4->range.offset += shift;
 					}
 				}
 				current->range.fsize = ret->phdr_start + ret->phdr_entries * entry_size - current->range.offset;
 				current->range.msize = ret->phdr_vaddr + ret->phdr_entries * entry_size - current->range.vaddr;
+				if (current->next) {
+					// last memory page with content from the current range
+					unsigned long long currentPage = (current->range.vaddr + current->range.msize) / PAGESIZE;
+					// first memory page with content from the next range
+					unsigned long long tmpPage = current->next->range.vaddr / PAGESIZE;
+					// last file page with content from the current range
+					unsigned long long currentFilePage = (current->range.offset + current->range.fsize) / PAGESIZE;
+					// first file page with content from the next range
+					unsigned long long tmpFilePage = (current->next->range.offset + current->next->range.shift) / PAGESIZE;
+					if (currentPage + 1 == tmpPage && currentFilePage + 1 == tmpFilePage) {
+						/* data of next range will be loaded in the following
+						 * page as content of current range => merge the ranges */
+						current->range.fsize = current->next->range.offset + current->next->range.shift + current->next->range.fsize - current->range.offset;
+						current->range.msize = current->next->range.vaddr + current->next->range.msize - current->range.vaddr;
+						current->range.loadable |= current->next->range.loadable;
+						current->range.flags |= current->next->range.flags;
+						ret->listEntries--;
+						ret->phdr_entries--;
+						current->next = current->next->next;
+					}
+				}
 				goto done;
 			}
 		}
