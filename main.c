@@ -360,6 +360,15 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 					 * containing section */
 					tmp->data.to = srcshdr->sh_size;
 				}
+
+				if (srcshdr->sh_entsize != 0 && tmp->data.from % srcshdr->sh_entsize != 0) {
+					error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (start relative to section start: 0x%llx, entrysize: 0x%lx, start of problematic range to keep: 0x%llx)", i, tmp->data.from % srcshdr->sh_entsize, tmp->data.from, srcshdr->sh_entsize, tmp->data.from + srcshdr->sh_offset);
+					goto err_free_srcphdr2;
+				}
+				if (srcshdr->sh_entsize != 0 && tmp->data.to % srcshdr->sh_entsize != 0) {
+					error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (end relative to section start: 0x%llx, entrysize: 0x%lx, end of problematic range to keep: 0x%llx)", i, tmp->data.to % srcshdr->sh_entsize, tmp->data.to, srcshdr->sh_entsize, tmp->data.to + srcshdr->sh_offset);
+					goto err_free_srcphdr2;
+				}
 			}
 
 #ifdef TESTCASE
@@ -466,6 +475,15 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				/* range under construction ends at the end of its containing
 				 * section */
 				tmp->data.to = srcshdr->sh_size;
+
+				if (srcshdr->sh_entsize != 0 && tmp->data.from % srcshdr->sh_entsize != 0) {
+					error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (start relative to section start: 0x%llx, entrysize: 0x%lx, start of problematic range to keep: 0x%llx)", i, tmp->data.from % srcshdr->sh_entsize, tmp->data.from, srcshdr->sh_entsize, tmp->data.from + srcshdr->sh_offset);
+					goto err_free_srcphdr2;
+				}
+				if (srcshdr->sh_entsize != 0 && tmp->data.to % srcshdr->sh_entsize != 0) {
+					error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (end relative to section start: 0x%llx, entrysize: 0x%lx, end of problematic range to keep: 0x%llx)", i, tmp->data.to % srcshdr->sh_entsize, tmp->data.to, srcshdr->sh_entsize, tmp->data.to + srcshdr->sh_offset);
+					goto err_free_srcphdr2;
+				}
 			}
 
 #ifdef TESTCASE
@@ -1147,7 +1165,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	else {
 		/* simply push the address ranges together */
 		for (size_t i = 1; i < size; i++) {
-			unsigned long long section_start = calculateOffset(ret->segments[i]->range.offset, current_size);
+			unsigned long long section_start = calculateOffset(ret->segments[i]->range.section_start, current_size);
 			for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
 				tmp->range.shift = calculateOffset(tmp->range.offset, current_size) - (signed long long) tmp->range.offset;
 				tmp->range.section_start = section_start;
@@ -1578,7 +1596,7 @@ int main(int argc, char **argv) {
 	}
 
 	/* Specify fill byte for padding - may be set for debugging purposes */
-	//elf_fill(0x00);
+	elf_fill(0xcc);
 
 //---------------------------------------------------------------------------//
 // Copy executable header                                                    //
@@ -1878,12 +1896,9 @@ fixed:
 				goto err_free_dstshdr;
 			}
 
-			// FIXME: früher prüfen! In computeSectionRanges verschieben?
-			if (tmp->data.from % tmp->data.section_align != 0) {
-				error(0, 0, "In section %lu: range to keep is misaligned by %llu byte(s) (offset in section: 0x%llx, aligment: 0x%llx)", i, tmp->data.from % tmp->data.section_align, tmp->data.from, tmp->data.section_align);
-				goto err_free_dstshdr;
-			}
-			dstdata->d_align = tmp->data.section_align;
+			/* alignment does not matter here because the position of the data
+			 * range is controlled via d_off */
+			dstdata->d_align = 1;
 			dstdata->d_type = tmp->data.d_type;
 			dstdata->d_version = tmp->data.d_version;
 			dstdata->d_buf = tmp->data.buffer;
