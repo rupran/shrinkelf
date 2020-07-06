@@ -1129,7 +1129,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	/* ignore section 0 */
 	for (size_t i = 1; i < size; i++) {
 		/* determine the address ranges from the data ranges of a section */
-		ret->segments[i] = segments(&ranges[i], calculateOffset(ranges[i].data.section_offset, current_size));
+		ret->segments[i] = segments(&ranges[i], ranges[i].data.section_offset);
 		loads += countLoadableSegmentRanges(ret->segments[i]);
 	}
 
@@ -1169,7 +1169,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	current->range.loadable = TRUE;
 	ret->listEntries--;
 	for (struct segmentRanges *tmp = ret->segments[1]->next; tmp; tmp = tmp->next) {
-		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE) || ((current->range.vaddr + current->range.msize) / PAGESIZE) + 1 == (tmp->range.vaddr / PAGESIZE)) {
+		if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE)) {
 			/* data of tmp range will be loaded in the same or the following
 			 * page as content of current range => merge the ranges */
 			current->range.fsize = tmp->range.offset + tmp->range.shift + tmp->range.fsize - current->range.offset;
@@ -1198,7 +1198,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 	}
 	for (size_t i = 2; i < size; i++) {
 		for (struct segmentRanges *tmp = ret->segments[i]; tmp; tmp = tmp->next) {
-			if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE) || ((current->range.vaddr + current->range.msize) / PAGESIZE) + 1 == (tmp->range.vaddr / PAGESIZE)) {
+			if (((current->range.vaddr + current->range.msize) / PAGESIZE) == (tmp->range.vaddr / PAGESIZE)) {
 				/* data of tmp range will be loaded in the same or the
 				 * following page as content of current range => merge the
 				 * ranges */
@@ -1244,8 +1244,8 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 				entry_size = sizeof(Elf32_Phdr);
 			}
 			else {
-				phdr_start = roundUp(sizeof(Elf32_Ehdr), PHDR64ALIGN);
-				phdr_vaddr = roundUp(current->range.vaddr + sizeof(Elf32_Ehdr), PHDR64ALIGN);
+				phdr_start = roundUp(sizeof(Elf64_Ehdr), PHDR64ALIGN);
+				phdr_vaddr = roundUp(current->range.vaddr + sizeof(Elf64_Ehdr), PHDR64ALIGN);
 				entry_size = sizeof(Elf64_Phdr);
 			}
 		}
@@ -1257,7 +1257,7 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 				entry_size = sizeof(Elf32_Phdr);
 			}
 			else {
-				phdr_start = roundUp(tmp->range.offset + tmp->range.fsize, PHDR64ALIGN);
+				phdr_start = roundUp(tmp->range.offset + tmp->range.fsize + tmp->range.shift, PHDR64ALIGN);
 				phdr_vaddr = roundUp(tmp->range.vaddr + tmp->range.msize, PHDR64ALIGN);
 				entry_size = sizeof(Elf64_Phdr);
 			}
@@ -1296,6 +1296,9 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 							}
 						}
 						current_size += shift;
+						for (struct segmentRanges *tmp4 = current->next; tmp4; tmp4 = tmp4->next) {
+							tmp4->range.shift += shift;
+						}
 					}
 					goto done;
 				}
@@ -1323,6 +1326,9 @@ struct layoutDescription * calculateNewFilelayout(Chain *ranges, size_t size, si
 						}
 					}
 					current_size += shift;
+					for (struct segmentRanges *tmp4 = current->next; tmp4; tmp4 = tmp4->next) {
+						tmp4->range.shift += shift;
+					}
 				}
 				current->range.fsize = ret->phdr_start + ret->phdr_entries * entry_size - current->range.offset;
 				current->range.msize = ret->phdr_vaddr + ret->phdr_entries * entry_size - current->range.vaddr;
