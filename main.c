@@ -395,20 +395,22 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				/* determine start and end addresses of section range in memory */
-				if (srcphdr->p_offset <= srcshdr->sh_offset) {
-					/* segment starts before section starts */
-					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
-				}
-				else {
-					/* segment starts after section starts */
-					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				}
+
 				if (srcshdr->sh_type == SHT_NOBITS) {
 					/* range contains whole NOBITS section */
+					tmp->as.from = srcshdr->sh_addr;
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
 				else {
+					/* determine start and end addresses of section range in memory */
+					if (srcphdr->p_offset <= srcshdr->sh_offset) {
+						/* segment starts before section starts */
+						tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
+					}
+					else {
+						/* segment starts after section starts */
+						tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+					}
 					tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
 				}
 				break;
@@ -499,20 +501,22 @@ int computeSectionRanges(Elf *src, Chain *ranges, Chain *dest, size_t section_nu
 				tmp->as.loadable = TRUE;
 				tmp->as.flags = srcphdr->p_flags;
 				tmp->as.align = srcphdr->p_align;
-				/* determine start and end addresses of section range in memory */
-				if (srcphdr->p_offset <= srcshdr->sh_offset) {
-					/* segment starts before section starts */
-					tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
-				}
-				else {
-					/* segment starts after section starts */
-					tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
-				}
+
 				if (srcshdr->sh_type == SHT_NOBITS) {
 					/* range contains whole NOBITS section */
+					tmp->as.from = srcshdr->sh_addr;
 					tmp->as.to = tmp->as.from + srcshdr->sh_size;
 				}
 				else {
+					/* determine start and end addresses of section range in memory */
+					if (srcphdr->p_offset <= srcshdr->sh_offset) {
+						/* segment starts before section starts */
+						tmp->as.from = srcphdr->p_vaddr + srcshdr->sh_offset + tmp->data.from - srcphdr->p_offset;
+					}
+					else {
+						/* segment starts after section starts */
+						tmp->as.from = srcphdr->p_offset - srcshdr->sh_offset;
+					}
 					tmp->as.to = tmp->as.from + (tmp->data.to - tmp->data.from);
 				}
 				break;
