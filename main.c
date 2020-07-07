@@ -1679,24 +1679,16 @@ int main(int argc, char **argv) {
 		error(0, 0, "Could not retrieve number of segments from input file: %s", elf_errmsg(-1));
 		goto err_free_section_ranges;
 	}
-	// FIXME: näher an for-Schleife
-	errno = 0;
-	// current PHDR entry of input file
-	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
-	if (srcphdr == NULL) {
-		error(0, errno, "Out of memory");
-		goto err_free_section_ranges;
-	}
 
 	// number of LOAD segments in source file
 	int loads = countLOADs(srce);
 	if (loads == -1) {
-		goto err_free_srcphdr;
+		goto err_free_section_ranges;
 	}
 	// description of layout of output file
 	struct layoutDescription *desc = calculateNewFilelayout(section_ranges, scnnum, phdrnum - loads, elfclass, args_info.permutate_given);
 	if (desc == NULL) {
-		goto err_free_srcphdr;
+		goto err_free_section_ranges;
 	}
 	dstehdr->e_phoff = desc->phdr_start;
 	// PHDR table of output file
@@ -1706,6 +1698,13 @@ int main(int argc, char **argv) {
 		goto err_free_desc;
 	}
 
+	errno = 0;
+	// current PHDR entry of input file
+	GElf_Phdr *srcphdr = calloc(1, sizeof(GElf_Phdr));
+	if (srcphdr == NULL) {
+		error(0, errno, "Out of memory");
+		goto err_free_desc;
+	}
 	// index of current PHDR entry in output file
 	size_t new_index = 0;
 	// flag if the current LOAD segment is the first of the input file
@@ -1714,7 +1713,7 @@ int main(int argc, char **argv) {
 	for (size_t i = 0; i < phdrnum; i++) {
 		if (gelf_getphdr(srce, i, srcphdr) == NULL) {
 			error(0, 0, "Could not retrieve phdr structure %lu of input file: %s", i, elf_errmsg(-1));
-			goto err_free_desc;
+			goto err_free_srcphdr;
 		}
 
 		if (srcphdr->p_type != PT_LOAD) {
@@ -1763,9 +1762,9 @@ int main(int argc, char **argv) {
 			for (size_t j = 0; j < desc->segmentNum; j++) {
 				for (struct segmentRanges *tmp = desc->segments[j]; tmp; tmp = tmp->next) {
 					// FIXME
-					// if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset + dstphdrs[i].p_filesz <= tmp->range.offset + tmp->range.fsize) {
+					if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset + dstphdrs[i].p_filesz <= tmp->range.offset + tmp->range.fsize) {
 					/* ^ won't work because segments don't contain more than one section */
-					if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->range.offset + tmp->range.fsize) {
+					// if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->range.offset + tmp->range.fsize) {
 						dstphdrs[i].p_offset += tmp->range.shift;
 						goto fixed;
 					}
@@ -1796,7 +1795,7 @@ fixed:
 	GElf_Shdr *srcshdr = calloc(1, sizeof(GElf_Shdr));
 	if (srcshdr == NULL) {
 		error(0, errno, "Out of memory");
-		goto err_free_desc;
+		goto err_free_srcphdr;
 	}
 	errno = 0;
 	// current section header of output file
@@ -1954,8 +1953,8 @@ fixed:
 //---------------------------------------------------------------------------//
 	free(dstshdr);
 	free(srcshdr);
-	deleteDesc(desc);
 	free(srcphdr);
+	deleteDesc(desc);
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
 			deleteList(section_ranges[i].next);
@@ -1992,10 +1991,10 @@ err_free_dstshdr:
 	free(dstshdr);
 err_free_srcshdr:
 	free(srcshdr);
-err_free_desc:
-	deleteDesc(desc);
 err_free_srcphdr:
 	free(srcphdr);
+err_free_desc:
+	deleteDesc(desc);
 err_free_section_ranges:
 	for (size_t i = 0; i < scnnum; i++) {
 		if (section_ranges[i].next) {
