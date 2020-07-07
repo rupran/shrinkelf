@@ -1595,7 +1595,10 @@ int main(int argc, char **argv) {
 		goto err_free_dste;
 	}
 
-	/* Specify fill byte for padding - may be set for debugging purposes */
+	/* Specify fill byte for padding -- especially the padding within the .text
+	 * section. Set to 0xcc because this generates an interrupt on the target
+	 * platform x86_64.
+	 */
 	elf_fill(0xcc);
 
 //---------------------------------------------------------------------------//
