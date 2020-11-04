@@ -1757,18 +1757,13 @@ int main(int argc, char **argv) {
 	/* fix up non-LOAD segments */
 	for (size_t i = 0; i < desc->phdr_entries; i++) {
 		if (dstphdrs[i].p_type != PT_LOAD) {
-			for (size_t j = 0; j < desc->segmentNum; j++) {
-				for (struct segmentRanges *tmp = desc->segments[j]; tmp; tmp = tmp->next) {
-					// FIXME
-					// if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset + dstphdrs[i].p_filesz <= tmp->range.offset + tmp->range.fsize) {
-					/* ^ won't work because segments don't contain more than one section */
-					if (tmp->range.offset <= dstphdrs[i].p_offset && dstphdrs[i].p_offset < tmp->range.offset + tmp->range.fsize) {
-						dstphdrs[i].p_offset += tmp->range.shift;
-						goto fixed;
-					}
+			for (struct segmentRanges *tmp = desc->segmentList; tmp; tmp = tmp->next) {
+				if (tmp->range.vaddr <= dstphdrs[i].p_vaddr && dstphdrs[i].p_vaddr + dstphdrs[i].p_filesz <= tmp->range.vaddr + tmp->range.fsize) {
+					dstphdrs[i].p_offset = tmp->range.offset + (dstphdrs[i].p_vaddr - tmp->range.vaddr);
+					break;
 				}
 			}
-fixed:
+
 			if (dstphdrs[i].p_type == PT_PHDR) {
 				/* fix up PHDR segment */
 				dstphdrs[i].p_vaddr = desc->phdr_vaddr;
