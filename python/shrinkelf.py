@@ -116,7 +116,7 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
         print("segments: section was none")
         return None
 
-    ret = []
+    ret: List[FragmentRange] = []
 
     current: FragmentRange = FragmentRange(offset=section[0].section_offset + section[0].start,
                                            fsize=section[0].end - section[0].start,
@@ -131,8 +131,7 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
             current.fsize = section[i].section_offset + section[i].end - current.offset
             current.msize = section[i].address_space_info.end - current.vaddr
             current.loadable |= section[i].address_space_info.loadable
-            # TODO: tmp auftreiben
-            current.flags |= tmp["as"]["flags"]
+            current.flags |= section[i].address_space_info.flags
         else:
             # data of tmp range will not be loaded in the same page as content
             # of current range => create new range
@@ -173,29 +172,29 @@ def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
 # \param current_size The currently occupied size in the new file
 #
 # \return The new ::permutation
-def createPermutation(segments, index, current_size):
-    ret = {"numEntries": len(segments[index])}
-    ret["tmp"] = [] * ret["numEntries"]
-    ret["result"] = [] * ret["numEntries"]
+def createPermutation(segments_01: List[List[FragmentRange]], index: int, current_size: int) -> Permutation:
+    ret: Permutation = Permutation(num_entries=len(segments_01[index]))
+    ret.tmp = [] * ret.num_entries
+    ret.result = [] * ret.num_entries
 
-    if current_size / PAGESIZE == (segments[index]["offset"] + segments[index]["fsize"]) / PAGESIZE:
+    if current_size / PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) / PAGESIZE:
         # mark first element because it is on the same page as the previous
         # section
-        ret["tmp"][0] = -1
-        ret["result"][0] = -1
+        ret.tmp[0] = -1
+        ret.result[0] = -1
 
-    if index != len(segments) - 1:
-        last = segments[index][-1]
-        if (last["offset"] + last["fsize"]) / PAGESIZE == (segments[index + 1]["offset"] + segments[index + 1]["fsize"]) / PAGESIZE:
+    if index != len(segments_01) - 1:
+        last = segments_01[index][-1]
+        if (last.offset + last.fsize) / PAGESIZE == (segments_01[index + 1][0].offset + segments_01[index + 1][0].fsize) / PAGESIZE:
             # mark last element because its on the same page as the next
             # section
-            ret["tmp"][-1] = -1
-            ret["result"][-1] = -1
+            ret.tmp[-1] = -1
+            ret.result[-1] = -1
 
     # set size of the section under the currently best permutation -
     # conceptional - to infinity because it is not determined now
-    # TODO: ggf. Vergleiche anpassen
-    ret["size"] = -1
+    # done: ggf. Vergleiche anpassen
+    ret.size = -1
 
     return ret
 
@@ -211,7 +210,7 @@ def createPermutation(segments, index, current_size):
 # \param occupiedSpace Number of already occupied bytes in new file
 #
 # \return Offset in new file
-def calculateOffset(prior_offset, occupied_space):
+def calculateOffset(prior_offset: int, occupied_space: int) -> int:
     prior_page_offset = prior_offset % PAGESIZE
     occupied_page_offset = occupied_space % PAGESIZE
     if occupied_page_offset <= prior_page_offset:
@@ -230,43 +229,43 @@ def calculateOffset(prior_offset, occupied_space):
 # \param perm The [state of the permutation algorithm](@ref permutation)
 #             containing the current and the best permutation
 # \param segments The address ranges to insert
-def evaluate(perm, segments):
-    start = 0
-    end = 0
+def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
+    start_01 = 0
+    end_01 = 0
 
     # look up for every position (ranges from 1 to the number of segments)
     # which segment to insert
-    for i in range(1, perm["numEntries"] + 1):
-        if i == 1 and perm["tmp"][0] == -1:
+    for i in range(1, perm.num_entries + 1):
+        if i == 1 and perm.tmp[0] == -1:
             # first position and the (in the input file) first segment is
             # marked to be inserted first
-            start = segments["offset"]
-            end = segments["offset"] + segments["fsize"]
+            start_01 = segments_02[0].offset
+            end_01 = segments_02[0].offset + segments_02[0].fsize
             continue
-        elif i == perm["numEntries"] and perm["tmp"][-1] == -1:
+        elif i == perm.num_entries and perm.tmp[-1] == -1:
             # last position and the (in the input file) last segment is marked
             # to be inserted last
-            tmp = segments[-1]
-            end = calculateOffset(tmp["offset"], end) + tmp["fsize"]
+            tmp_07 = segments_02[-1]
+            end_01 = calculateOffset(tmp_07.offset, end_01) + tmp_07.fsize
             break
         else:
             # search the segment with the index for the current position
-            for j in range(0, perm["numEntries"]):
-                if i == perm["tmp"][j]:
-                    tmp = segments[j]
+            for j in range(0, perm.num_entries):
+                if i == perm.tmp[j]:
+                    tmp_08 = segments_02[j]
                     if i == 1:
-                        start = tmp["offset"]
-                        end = tmp["offset"]
+                        start_01 = tmp_08.offset
+                        end_01 = tmp_08.offset
 
-                    end = calculateOffset(tmp["offset"], end) + tmp["fsize"]
+                    end_01 = calculateOffset(tmp_08.offset, end_01) + tmp_08.fsize
 
-    size = end - start
-    if size < perm["size"]:
+    size = end_01 - start_01
+    if size < perm.size or perm.size == -1:
         # update currently best permutation if current permutation is better
-        for i in range(0, perm["numEntries"]):
-            perm["result"][i] = perm["tmp"][i]
+        for i in range(0, perm.num_entries):
+            perm.result[i] = perm.tmp[i]
 
-        perm["size"] = size
+        perm.size = size
 
 
 # FIXME: Doku
@@ -277,28 +276,28 @@ def evaluate(perm, segments):
 # \param segments The address ranges to permute
 # \param index The current position where a address range is inserted (doubles
 #              as depth of recursion)
-def recursive_permute(perm, segments, index):
-    if index > perm["numEntries"]:
+def recursive_permute(perm: Permutation, segments_04: List[FragmentRange], index: int):
+    if index > perm.num_entries:
         # all address ranges are inserted
-        evaluate(perm, segments)
+        evaluate(perm, segments_04)
         return
 
-    if index == 1 and perm["tmp"][0] == -1:
+    if index == 1 and perm.tmp[0] == -1:
         # first address range is constrained by the first element of segments
-        recursive_permute(perm, segments, index + 1)
-    elif index == perm["numEntries"] and perm["tmp"][-1] == -1:
+        recursive_permute(perm, segments_04, index + 1)
+    elif index == perm.num_entries and perm.tmp[-1] == -1:
         # last address range is constrained by the last element of segments
-        recursive_permute(perm, segments, index + 1)
+        recursive_permute(perm, segments_04, index + 1)
     else:
-        for i in range(0, perm["numEntries"]):
+        for i in range(0, perm.num_entries):
             # check if range is not inserted yet
-            if perm["tmp"][i] == 0:
+            if perm.tmp[i] == 0:
                 # insert range temporary
-                perm["tmp"][i] = index
+                perm.tmp[i] = index
                 # try every possible permutation with the remaining ranges
-                recursive_permute(perm, segments, index + 1)
+                recursive_permute(perm, segments_04, index + 1)
                 # remove range to try the next for this position
-                perm["tmp"][i] = 0
+                perm.tmp[i] = 0
 
 
 # FIXME: Doku
@@ -307,33 +306,33 @@ def recursive_permute(perm, segments, index):
 # \param perm The order in which the ranges are inserted
 # \param segments The ranges that are inserted
 # \param current_size The already occupied size in the output file
-def segmentOffsets(perm, segments, current_size):
+def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_size: int):
     section_start = 0
-    for i in range(1, perm["numEntries"]):
-        if i == 1 and perm["result"][0] == -1:
+    for i in range(1, perm.num_entries):
+        if i == 1 and perm.result[0] == -1:
             # the first element of segments is constrained to the first
             # position
-            section_start = calculateOffset(segments["offset"], current_size)
-            segments["shift"] = section_start - segments["offset"]
-            segments["section_start"] = section_start
-            current_size = section_start + segments["fsize"]
-        elif i == perm["numEntries"] and perm["result"][-1] == -1:
+            section_start = calculateOffset(segments_07[0].offset, current_size)
+            segments_07[0].shift = section_start - segments_07[0].offset
+            segments_07[0].section_start = section_start
+            current_size = section_start + segments_07[0].fsize
+        elif i == perm.num_entries and perm.result[-1] == -1:
             # the last element of segments is constrained to the last position
-            tmp = segments[-1]
-            tmp["shift"] = calculateOffset(tmp["offset"], current_size) - tmp["offset"]
-            tmp["section_start"] = section_start
+            tmp_11 = segments_07[-1]
+            tmp_11.shift = calculateOffset(tmp_11.offset, current_size) - tmp_11.offset
+            tmp_11.section_start = section_start
         else:
             # search the element with the matching index for the current
             # position
-            for j in range(0, perm["numEntries"]):
-                if i == perm["result"][j]:
-                    tmp = segments[j]
+            for j in range(0, perm.num_entries):
+                if i == perm.result[j]:
+                    tmp_12 = segments_07[j]
                     if i == 1:
-                        section_start = calculateOffset(tmp["offset"], current_size)
+                        section_start = calculateOffset(tmp_12.offset, current_size)
 
-                    tmp["shift"] = calculateOffset(tmp["offset"], current_size) - tmp["offset"]
-                    tmp["section_start"] = section_start
-                    current_size = calculateOffset(tmp["offset"], current_size) + tmp["fsize"]
+                    tmp_12.shift = calculateOffset(tmp_12.offset, current_size) - tmp_12.offset
+                    tmp_12.section_start = section_start
+                    current_size = calculateOffset(tmp_12.offset, current_size) + tmp_12.fsize
 
 
 # FIXME: Doku
@@ -344,15 +343,15 @@ def segmentOffsets(perm, segments, current_size):
 # \param current_size The currently occupied space in the output file
 #
 # \return The size of the output file after inserting all address ranges
-def permute(segments, size, current_size):
-    for i in range(1, size):
-        perm = createPermutation(segments, i, current_size)
+def permute(segments_08: List[List[FragmentRange]], current_size: int) -> int:
+    for i in range(1, len(segments_08)):
+        perm = createPermutation(segments_08, i, current_size)
         # permute the address ranges of section i
-        recursive_permute(perm, segments[i], 1)
+        recursive_permute(perm, segments_08[i], 1)
         # calculate the offsets of the address ranges of section i
-        segmentOffsets(perm, segments[i], current_size)
+        segmentOffsets(perm, segments_08[i], current_size)
         # update current size
-        current_size = segments[i]["section_start"] + perm["size"]
+        current_size = segments_08[i][0].section_start + perm.size
 
     return current_size
 
@@ -366,10 +365,10 @@ def permute(segments, size, current_size):
 # \param base The value of which the multiple is computed
 #
 # \returns The multiple of base
-def roundUp(value, base):
-    tmp = value % base
-    if tmp != 0:
-        return value - tmp + base
+def roundUp(value: int, base: int) -> int:
+    tmp_13 = value % base
+    if tmp_13 != 0:
+        return value - tmp_13 + base
     else:
         return value
 
@@ -381,8 +380,9 @@ def roundUp(value, base):
 # \param range The data range
 #
 # \return Value indicating if the address range contains the data range
-def contains(segment, datarange):
-    if datarange["data"]["section_offset"] + datarange["data"]["to"] <= segment["offset"] + segment["fsize"] and datarange["data"]["section_offset"] + datarange["data"]["from"] >= segment["offset"]:
+def contains(segment: FragmentRange, datarange: FileFragment) -> bool:
+    if datarange.section_offset + datarange.end <= segment.offset + segment.fsize \
+            and datarange.section_offset + datarange.start >= segment.offset:
         return True
     return False
 
@@ -394,17 +394,17 @@ def contains(segment, datarange):
 # \param ranges Array of list of [data ranges](@ref range)
 # \param segments Array of list of [address ranges](@ref segmentRange)
 # \param size Size of these arrays
-def calculateShift(ranges, segments, size):
-    for i in range(1, size):
-        for tmp in segments[i]:
-            for tmpSec in ranges[i]:
-                if contains(tmp, tmpSec):
-                    tmpSec["data"]["section_shift"] = tmp["section_start"] - tmpSec["data"]["section_offset"]
-                    tmpSec["data"]["data_shift"] = tmp["shift"] - tmpSec["data"]["section_shift"]
+def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[FragmentRange]]):
+    for i in range(1, len(ranges_07)):
+        for tmp_21 in segments_17[i]:
+            for tmpSec in ranges_07[i]:
+                if contains(tmp_21, tmpSec):
+                    tmpSec.section_shift = tmp_21.section_start - tmpSec.section_offset
+                    tmpSec.fragment_shift = tmp_21.shift - tmpSec.section_shift
 
 
 # FIXME: Doku
-def calculatePHDRInfo(fileoffset, memoryoffset, elfclass, add_ehdr):
+def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_ehdr: bool) -> (int, int, int):
     if elfclass == ELFCLASS32:
         realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf32_ehdr
         realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf32_ehdr
@@ -422,140 +422,145 @@ def calculatePHDRInfo(fileoffset, memoryoffset, elfclass, add_ehdr):
 
 
 # FIXME: Doku
-def mergeFragments(fragments, start_with_ehdr):
-    ret = []
-    current = {}
+def mergeFragments(fragments: List[FragmentRange], start_with_ehdr: bool) -> List[FragmentRange]:
+    ret: List[FragmentRange] = []
+    current: FragmentRange = FragmentRange()
 
     if start_with_ehdr:
-        current["offset"] = 0
-        current["fsize"] = fragments[0]["offset"] + fragments[0]["shift"] + fragments[0]["fsize"]
-        current["vaddr"] = (fragments[0]["vaddr"] / PAGESIZE) * PAGESIZE
-        current["msize"] = current["fsize"]
-        current["flags"] = fragments[0]["flags"]
-        current["loadable"] = True
+        current.offset = 0
+        current.fsize = fragments[0].offset + fragments[0].shift + fragments[0].fsize
+        current.vaddr = (fragments[0].vaddr / PAGESIZE) * PAGESIZE
+        current.msize = current.fsize
+        current.flags = fragments[0].flags
+        current.loadable = True
     else:
-        current["offset"] = fragments[0]["offset"]
-        current["fsize"] = fragments[0]["fsize"]
-        current["vaddr"] = fragments[0]["vaddr"]
-        current["msize"] = fragments[0]["msize"]
-        current["flags"] = fragments[0]["flags"]
-        current["loadable"] = fragments[0]["loadable"]
+        current.offset = fragments[0].offset
+        current.fsize = fragments[0].fsize
+        current.vaddr = fragments[0].vaddr
+        current.msize = fragments[0].msize
+        current.flags = fragments[0].flags
+        current.loadable = fragments[0].loadable
 
-    for item in fragments[1:]:
+    for item_13 in fragments[1:]:
         # last memory page with content from the current range
-        current_page = (current["vaddr"] + current["msize"]) / PAGESIZE
+        current_page = (current.vaddr + current.msize) / PAGESIZE
         # FIXME: Doku
         # first memory page with content from the item range
-        tmp_page = item["vaddr"] / PAGESIZE
+        tmp_page = item_13.vaddr / PAGESIZE
         # last file page with content from the current range
-        current_file_page = (current["offset"] + current["fsize"]) / PAGESIZE
+        current_file_page = (current.offset + current.fsize) / PAGESIZE
         # FIXME: Doku
         # first file page with content from the item range
-        tmp_file_page = (item["offset"] + item["shift"]) / PAGESIZE
+        tmp_file_page = (item_13.offset + item_13.shift) / PAGESIZE
 
         if current_page == tmp_page or (current_page + 1 == tmp_page and current_file_page + 1 == tmp_file_page):
             # FIXME: Doku
             # data of tmp range will be loaded in the same or the following
             # page as content of current range => merge the ranges
-            current["fsize"] = item["offset"] + item["shift"] + item["fsize"] - current["offset"]
-            current["msize"] = item["vaddr"] + item["msize"] - current["vaddr"]
-            current["loadable"] |= item["loadable"]
-            current["flags"] |= item["flags"]
+            current.fsize = item_13.offset + item_13.shift + item_13.fsize - current.offset
+            current.msize = item_13.vaddr + item_13.msize - current.vaddr
+            current.loadable |= item_13.loadable
+            current.flags |= item_13.flags
         else:
             # FIXME: Doku
             # data of tmp range will be loaded in a page farther away from the
             # content of current range => create new ranges
             ret.append(current)
-            current = {"offset": item["offset"] + item["shift"], "fsize": item["fsize"], "vaddr": item["vaddr"],
-                       "msize": item["msize"], "flags": item["flags"], "loadable": item["loadable"]}
+            current = FragmentRange(offset=item_13.offset + item_13.shift, fsize=item_13.fsize, vaddr=item_13.vaddr,
+                                    msize=item_13.msize, flags=item_13.flags, loadable=item_13.loadable)
 
     ret.append(current)
     return ret
 
 
 # FIXME: Doku
-def insertPHDR(segment_list, elfclass, phdr_entries, current_size):
+def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries: int, current_size: int):
     for i in range(0, len(segment_list) + 1):
         if i == 0:
             current_item = segment_list[i]
-            phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(0, current_item["vaddr"], elfclass, True)
-            if phdr_vaddr + entry_size * phdr_entries > current_item["vaddr"]:
+            phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(0, current_item.vaddr, elfclass, True)
+            if phdr_vaddr + entry_size * phdr_entries > current_item.vaddr:
                 # PHDR table would overlap with following fragment
                 continue
             else:
                 # insert PHDR table after file header
-                # TODO: phdr_entries enthalten ggf. nur die Nicht-LOADs
-                phdr = {"offset": phdr_start, "fsize": phdr_entries * entry_size, "vaddr": phdr_vaddr, "loadable": True}
-                phdr["msize"] = phdr["fsize"]
-                # TODO: Flags setzen
-                # phdr["flags"] =
-                # TODO: ggf. restliche fragmente in der Datei verschieben
-                if current_item["offset"] + current_item["shift"] < phdr["offset"] + phdr["fsize"]:
-                    shift = roundUp(phdr["offset"] + phdr["fsize"] - (current_item["offset"] + current_item["shift"]), PAGESIZE)
+                # done: phdr_entries enthalten ggf. nur die Nicht-LOADs
+                phdr: FragmentRange = FragmentRange(offset=phdr_start, fsize=phdr_entries * entry_size,
+                                                    vaddr=phdr_vaddr, loadable=True)
+                phdr.msize = phdr.fsize
+                phdr.type = PT_LOAD.value
+                if elfclass == ELFCLASS32:
+                    phdr.align = PHDR32ALIGN
+                else:
+                    phdr.align = PHDR64ALIGN
+                phdr.flags = PF_R | PF_X
+                if current_item.offset + current_item.shift < phdr.offset + phdr.fsize:
+                    shift = roundUp(phdr.offset + phdr.fsize - (current_item.offset + current_item.shift), PAGESIZE)
                     for j in range(i, len(segment_list)):
                         tmp3 = segment_list[j]
-                        tmp3["shift"] += shift
-                        tmp3["section_start"] += shift
+                        tmp3.shift += shift
+                        tmp3.section_start += shift
                     # TODO: current_size kommunizieren
                     current_size += shift
                     # correct offset of LOAD PHDRs after inserting PHDR table
-                    # TODO: ist das nötig?
-                    current_item["fsize"] += shift
-                # TODO: in segment_list einhängen
+                    current_item.fsize += shift
                 segment_list.insert(i, phdr)
                 mergeFragments(segment_list, False)
                 # TODO: PHDR info zurückgeben
                 return phdr
-        # TODO:
         elif i == len(segment_list):
             previous_item = segment_list[i - 1]
-            fileoffset = previous_item["offset"] + previous_item["fsize"] + previous_item["shift"]
-            memoryoffset = previous_item["vaddr"] + previous_item["msize"]
+            fileoffset = previous_item.offset + previous_item.fsize + previous_item.shift
+            memoryoffset = previous_item.vaddr + previous_item.msize
             phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
             # insert after all sections
             # XXX: untested
             # FIXME: Alignment not given after NOBITS sections
-            phdr = {"offset": phdr_start, "vaddr": phdr_vaddr, "fsize": phdr_entries * entry_size, "loadable": True}
-            phdr["msize"] = phdr["fsize"]
-            # TODO: Flags setzen
-            # phdr["flags"] =
+            phdr = FragmentRange(offset=phdr_start, vaddr=phdr_vaddr, fsize=phdr_entries * entry_size, loadable=True)
+            phdr.msize = phdr.fsize
+            phdr.flags = PF_R | PF_X
+            if elfclass == ELFCLASS32:
+                phdr.align = PHDR32ALIGN
+            else:
+                phdr.align = PHDR64ALIGN
+            phdr.type = PT_LOAD.value
             # TODO: current_size kommunizieren
-            current_size = phdr["offset"] + phdr["fsize"]
-            # TODO: in segment_list einhängen
+            # current_size = phdr.offset + phdr.fsize
             segment_list.append(phdr)
             mergeFragments(segment_list, False)
-            # TODO: Sprungmarke fixen
+            # TODO: PHDR info zurückgeben
             return phdr
         else:
             previous_item = segment_list[i - 1]
             current_item = segment_list[i]
             # determine which start addresses the PHDR table would have if it were
             # inserted after section i
-            fileoffset = previous_item["offset"] + previous_item["fsize"] + previous_item["shift"]
-            memoryoffset = previous_item["vaddr"] + previous_item["msize"]
+            fileoffset = previous_item.offset + previous_item.fsize + previous_item.shift
+            memoryoffset = previous_item.vaddr + previous_item.msize
             phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
-            if phdr_vaddr + entry_size * phdr_entries > current_item["vaddr"]:
+            if phdr_vaddr + entry_size * phdr_entries > current_item.vaddr:
                 # PHDR table would overlap with following fragment
                 continue
             else:
                 # insert PHDR table after file header
-                phdr = {"offset": phdr_start, "fsize": phdr_entries * entry_size, "vaddr": phdr_vaddr, "loadable": True}
-                phdr["msize"] = phdr["fsize"]
-                # TODO: Flags setzen
-                # phdr["flags"] =
-                # TODO: ggf. restliche fragmente in der Datei verschieben
-                if current_item["offset"] + current_item["shift"] < phdr["offset"] + phdr["fsize"]:
-                    shift = roundUp(phdr["offset"] + phdr["fsize"] - (current_item["offset"] + current_item["shift"]), PAGESIZE)
+                phdr = FragmentRange(offset=phdr_start, fsize=phdr_entries * entry_size, vaddr=phdr_vaddr, loadable=True)
+                phdr.msize = phdr.fsize
+                phdr.flags = PF_R | PF_X
+                if elfclass == ELFCLASS32:
+                    phdr.align = PHDR32ALIGN
+                else:
+                    phdr.align = PHDR64ALIGN
+                phdr.type = PT_LOAD.value
+                if current_item.offset + current_item.shift < phdr.offset + phdr.fsize:
+                    shift = roundUp(phdr.offset + phdr.fsize - (current_item.offset + current_item.shift), PAGESIZE)
                     for j in range(i, len(segment_list)):
                         tmp3 = segment_list[j]
-                        tmp3["shift"] += shift
-                        tmp3["section_start"] += shift
+                        tmp3.shift += shift
+                        tmp3.section_start += shift
                     # TODO: current_size kommunizieren
                     current_size += shift
                     # correct offset of LOAD PHDRs after inserting PHDR table
-                    # TODO: ist das nötig?
-                    current_item["fsize"] += shift
-                # TODO: in segment_list einhängen
+                    current_item.fsize += shift
                 segment_list.insert(i, phdr)
                 mergeFragments(segment_list, False)
                 # TODO: PHDR info zurückgeben
@@ -573,45 +578,45 @@ def insertPHDR(segment_list, elfclass, phdr_entries, current_size):
 #
 # \return The [description of the file layout](@ref layoutDescription) of the
 #         output file
-def calculateNewFilelayout(ranges, size, old_entries, elfclass, permute_ranges) -> LayoutDescription:
-    ret: LayoutDescription = LayoutDescription(segment_num=size)
+def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int, permute_ranges: bool) -> LayoutDescription:
+    length_ranges = len(ranges_13)
+    ret: LayoutDescription = LayoutDescription(segment_num=length_ranges)
 
     # number of LOAD entries in new PHDR table
     # Start with one for file header and one for PHDR table
     loads = 2
-    # TODO: wofür wirst du gebraucht?
-    current_size = 0
     if elfclass == ELFCLASS32:
         current_size = sizeof_elf32_ehdr
     else:
         current_size = sizeof_elf64_ehdr
 
-    segments = [[]] * size
+    segments_21: List[List[FragmentRange]] = [[]] * length_ranges
     # ignore section 0 (that is not a "real" section)
-    for i in (1, size):
+    for i in (1, length_ranges):
         # determine the address ranges from the data ranges of a section
-        segments[i] = segments(ranges[i], ranges[i][0]["data"]["section_offset"])
-        loads += countLoadableSegmentRanges(segments[i])
+        segments_21[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
+        loads += countLoadableSegmentRanges(segments_21[i])
 
-    ret.segments = segments
+    ret.segments = segments_21
 
     # check if user want to permute address ranges
     if permute_ranges:
-        current_size = permute(ret.segments, ret.segment_num, current_size)
+        current_size = permute(ret.segments, current_size)
         if current_size == 0:
             raise cu
     else:
         # simply push the address ranges together
-        for i in range(1, size):
+        for i in range(1, length_ranges):
             section_start = calculateOffset(ret.segments[i][0].section_start, current_size)
-            for item in ret.segments[i]:
-                item["shift"] = calculateOffset(item["offset"], current_size) - item["offset"]
-                item["section_start"] = section_start
-                current_size = calculateOffset(item["offset"], current_size) + item["fsize"]
+            item_34: FragmentRange
+            for item_34 in ret.segments[i]:
+                item_34.shift = calculateOffset(item_34.offset, current_size) - item_34.offset
+                item_34.section_start = section_start
+                current_size = calculateOffset(item_34.offset, current_size) + item_34.fsize
 
     # join address ranges between sections
     fragments = []
-    for i in range(1, size):
+    for i in range(1, length_ranges):
         fragments += ret.segments[i]
 
     ret.segment_list = mergeFragments(fragments, True)
@@ -619,7 +624,7 @@ def calculateNewFilelayout(ranges, size, old_entries, elfclass, permute_ranges) 
 
     # TODO: phdr kommunizieren
     phdr = insertPHDR(ret.segment_list, elfclass, ret.list_entries + old_entries, current_size)
-    calculateShift(ranges, ret.segments, size)
+    calculateShift(ranges_13, ret.segments)
 
     # determine start of SHDR table
     if elfclass == ELFCLASS32:
@@ -638,7 +643,7 @@ def calculateNewFilelayout(ranges, size, old_entries, elfclass, permute_ranges) 
 #
 # \return a List of lists containing the ranges (with additional information)
 #         per section
-def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]]:
+def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c_size_t) -> List[List[FileFragment]]:
     # number of segments in source file
     phdrnum: c_size_t[int] = c_size_t(0)
     if libelf.elf_getphdrnum(src, byref(phdrnum)) != 0:
@@ -648,7 +653,7 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
     # current range to process
     r: int = 0
     # ranges split per section
-    section_ranges: List[List[FileFragment]] = [None] * section_number.value
+    section_ranges: List[List[FileFragment]] = [[]] * section_number.value
     for i in range(0, section_number.value):
         section_ranges[i] = []
 
@@ -664,7 +669,7 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
 
         # split ranges in section ranges and add layout data (ranges that end
         # in section i)
-        while r < len(ranges) and ranges[r][1] <= srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
+        while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
             current_fragment = FileFragment()
 
             # determine start and end addresses of section range in file
@@ -675,17 +680,17 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
             else:
                 # determine start of range under construction relative to the
                 # start of its containing section
-                if ranges[r][0] < srcshdr.sh_offset:
+                if ranges_27[r][0] < srcshdr.sh_offset:
                     # range under construction starts at the beginning of its
                     # containing section
                     current_fragment.start = 0
                 else:
-                    current_fragment.start = ranges[r][0] - srcshdr.sh_offset
+                    current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
 
                 # determine end of range under construction relative to the end
                 # of its containing section
-                if ranges[r][1] < srcshdr.sh_offset + srcshdr.sh_size:
-                    current_fragment.end = ranges[r][1] - srcshdr.sh_offset
+                if ranges_27[r][1] < srcshdr.sh_offset + srcshdr.sh_size:
+                    current_fragment.end = ranges_27[r][1] - srcshdr.sh_offset
                 else:
                     # range under construction ends at the end of its
                     # containing section
@@ -744,7 +749,7 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
 
         # split ranges in section ranges and add layout data (range that begins
         # in section i but does not end there)
-        if r < len(ranges) and ranges[r][0] < srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
+        if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
             current_fragment = FileFragment()
 
             # determine start and end addresses of section range in file
@@ -755,12 +760,12 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
             else:
                 # determine start of range under construction relative to the
                 # start of its containing section
-                if ranges[r][0] < srcshdr.sh_offset:
+                if ranges_27[r][0] < srcshdr.sh_offset:
                     # range under construction starts at the beginning of its
                     # containing section
                     current_fragment.start = 0
                 else:
-                    current_fragment.start = ranges[r][0] - srcshdr.sh_offset
+                    current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
                 # range under construction ends at the end of its containing
                 # section
                 current_fragment.end = srcshdr.sh_size
@@ -824,10 +829,10 @@ def computeSectionRanges(src, ranges, section_number) -> List[List[FileFragment]
 # \param section List of data ranges in a section
 #
 # \return The size of the section
-def calculateSectionSize(section):
+def calculateSectionSize(section: List[FileFragment]):
     size = 0
-    for tmp in section:
-        temp_size = tmp["data"]["to"] + tmp["data"]["data_shift"]
+    for tmp_34 in section:
+        temp_size = tmp_34.end + tmp_34.fragment_shift
         if temp_size > size:
             size = temp_size
 
@@ -835,7 +840,7 @@ def calculateSectionSize(section):
 
 
 # FIXME: Doku
-def shrinkelf(args, ranges):
+def shrinkelf(args_01, ranges_34: (int, int)):
     # --------------------------------------------------------------------------- #
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
@@ -845,10 +850,9 @@ def shrinkelf(args, ranges):
         exit(1)
 
     # file descriptor of input file
-    # TODO: Rückgabewert von os.open nachschlagen
-    srcfd = os.open(args.file, os.O_RDONLY)
+    srcfd: int = os.open(args_01.file, os.O_RDONLY)
     if srcfd < 0:
-        print_error("Could not open input file " + args.file)
+        print_error("Could not open input file " + args_01.file)
         exit(1)
 
     cu.level += 1
@@ -861,10 +865,9 @@ def shrinkelf(args, ranges):
 
         cu.level += 1
         # file descriptor of output file
-        # TODO: Rückgabewert von os.open nachschlagen
-        dstfd: int = os.open(args.output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
+        dstfd: int = os.open(args_01.output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
         if dstfd < 0:
-            print_error("Could not open output file " + args.output_file)
+            print_error("Could not open output file " + args_01.output_file)
             raise cu
 
         cu.level += 1
@@ -939,7 +942,7 @@ def shrinkelf(args, ranges):
             print_error("Could not retrieve number of sections from input file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
-        section_ranges: List[List[FileFragment]] = computeSectionRanges(srce, ranges, scnnum)
+        section_ranges: List[List[FileFragment]] = computeSectionRanges(srce, ranges_34, scnnum)
 
         # number of segments in input file
         phdrnum: c_size_t[int] = c_size_t(0)
@@ -950,8 +953,7 @@ def shrinkelf(args, ranges):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        # TODO: loadable von unloadable Segmenten trennen
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, scnnum.value, phdrnum.value - loads, elfclass, args.permutate)
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, args_01.permutate)
         dstehdr.e_phoff = desc.phdr_start
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, desc.phdr_entries)
@@ -991,16 +993,15 @@ def shrinkelf(args, ranges):
                 # of output file
                 first_load = False
 
-                tmp: FragmentRange
-                # TODO: loadable_segmentList existiert noch nicht
-                for tmp in desc["loadable_segmentList"]:
+                tmp_55: FragmentRange
+                for tmp_55 in desc.sorted_loadable_segments():
                     dstphdrs[new_index].p_type = PT_LOAD
-                    dstphdrs[new_index].p_offset = tmp.offset + tmp.shift
-                    dstphdrs[new_index].p_vaddr = tmp.vaddr
-                    dstphdrs[new_index].p_paddr = tmp.vaddr
-                    dstphdrs[new_index].p_filesz = tmp.fsize
-                    dstphdrs[new_index].p_memsz = tmp.msize
-                    dstphdrs[new_index].p_flags = tmp.flags
+                    dstphdrs[new_index].p_offset = tmp_55.offset + tmp_55.shift
+                    dstphdrs[new_index].p_vaddr = tmp_55.vaddr
+                    dstphdrs[new_index].p_paddr = tmp_55.vaddr
+                    dstphdrs[new_index].p_filesz = tmp_55.fsize
+                    dstphdrs[new_index].p_memsz = tmp_55.msize
+                    dstphdrs[new_index].p_flags = tmp_55.flags
                     dstphdrs[new_index].p_align = PAGESIZE
                     new_index += 1
             else:
@@ -1010,9 +1011,9 @@ def shrinkelf(args, ranges):
         # fix up non-LOAD segments
         for i in range(0, desc.phdr_entries):
             if dstphdrs[i].p_type != PT_LOAD:
-                for tmp in desc.segment_list:
-                    if tmp.vaddr <= dstphdrs[i].p_vaddr and dstphdrs[i].p_vaddr + dstphdrs[i].p_filesz <= tmp.vaddr + tmp.fsize:
-                        dstphdrs[i].p_offset = tmp.offset + (dstphdrs[i].p_vaddr - tmp.vaddr)
+                for tmp_56 in desc.segment_list:
+                    if tmp_56.vaddr <= dstphdrs[i].p_vaddr and dstphdrs[i].p_vaddr + dstphdrs[i].p_filesz <= tmp_56.vaddr + tmp_56.fsize:
+                        dstphdrs[i].p_offset = tmp_56.offset + (dstphdrs[i].p_vaddr - tmp_56.vaddr)
                         break
 
                 if dstphdrs[i].p_type == PT_PHDR:
@@ -1054,18 +1055,10 @@ def shrinkelf(args, ranges):
                 print_error("Could not retrieve shdr structure for section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
-##########################################################################################
-            # TODO: buffer bereitstellen
-            # / *allocate buffers for the data of the output file * /
-            # for (Chain * tmp = & section_ranges[i]; tmp; tmp = tmp->next) {
-            #   errno = 0;
-            #   tmp->data.buffer = calloc(tmp->data.to - tmp->data.from, sizeof(char));
-            #   if (tmp->data.buffer == NULL) {
-            #       error(0, errno, "Out of memory");
-            #       goto err_free_dstshdr;
-            #   }
-            # }
-            ###################################################################################
+            # done: buffer bereitstellen
+            # allocate buffers for the data of the output file
+            for tmp_89 in section_ranges[i]:
+                tmp_89.buffer = create_string_buffer(tmp_89.end - tmp_89.start)
 
             # current data of current section of input file
             srcdata_pointer: POINTER(Elf_Data) = libelf.elf_getdata(srcscn, None)
@@ -1104,8 +1097,9 @@ def shrinkelf(args, ranges):
                         # range ends before source data ends
                         srcend = item_01.end
 
-                    # TODO: Daten übertragen
-                    memcpy(item_01.buffer + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
+                    # done: Daten übertragen
+                    # memcpy(item_01.buffer + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
+                    memmove(addressof(item_01.buffer) + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
                     item_01.d_version = srcdata.d_version
                     item_01.d_type = srcdata.d_type
 
@@ -1113,7 +1107,7 @@ def shrinkelf(args, ranges):
 
             # construct data descriptors of current section
             for item_02 in section_ranges[i]:
-                dstdata = libelf.elf_newdata(dstscn)
+                dstdata: Elf_Data = libelf.elf_newdata(dstscn)
                 if dstdata is None:
                     print_error("Could not add data to section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
@@ -1122,7 +1116,8 @@ def shrinkelf(args, ranges):
                 dstdata.d_align = 1
                 dstdata.d_type = item_02.d_type
                 dstdata.d_version = item_02.d_version
-                dstdata.d_buf = item_02.buffer
+                # done: buffer in passenden Datentypen umwandeln
+                dstdata.d_buf = cast(item_02.buffer, POINTER(c_char))
                 dstdata.d_off = item_02.start + item_02.fragment_shift
                 dstdata.d_size = item_02.end - item_02.start
 
@@ -1147,7 +1142,6 @@ def shrinkelf(args, ranges):
 
         dstehdr.e_shoff = desc.shdr_start
 
-        # TODO: libelf Funktionen
         # write new ELF file
         if libelf.elf_update(dste, ELF_C_WRITE) == -1:
             print_error("Could not write ELF structures to output file: " + libelf.elf_errmsg(c_int(-1)))
@@ -1160,10 +1154,13 @@ def shrinkelf(args, ranges):
     #     print(e.args)
     finally:
         if cu.level >= 4:
+            # noinspection PyUnboundLocalVariable
             libelf.elf_end(dste)
         if cu.level >= 3:
+            # noinspection PyUnboundLocalVariable
             os.close(dstfd)
         if cu.level >= 2:
+            # noinspection PyUnboundLocalVariable
             libelf.elf_end(srce)
         if cu.level >= 1:
             os.close(srcfd)
@@ -1175,6 +1172,7 @@ if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
     #  Command line argument processing                                           #
     # --------------------------------------------------------------------------- #
+    # noinspection PyTypeChecker
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("file", help="the file, which should be shrunk")
     parser.add_argument("-k", "--keep", metavar="RANGE", action='append', help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")

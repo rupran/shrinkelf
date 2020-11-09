@@ -1,3 +1,4 @@
+from ctypes import Array, c_char
 from typing import List
 
 
@@ -8,7 +9,7 @@ class MemoryFragment:
     start: int          # from
     end: int            # to
 
-    def __init__(self, start=-1, end=0, align=0, flags=0, loadable=False):
+    def __init__(self, start=0, end=0, align=0, flags=0, loadable=False):
         self.start = start
         self.end = end
         self.align = align
@@ -23,7 +24,7 @@ class FileFragment:
     section_align: int
     section_shift: int
     fragment_shift: int             # data_shift
-    buffer: bytearray
+    buffer: Array[c_char]
     d_type: int
     d_version: int
     address_space_info: MemoryFragment
@@ -52,7 +53,8 @@ class FragmentRange:
     loadable: bool
     section_start: int
 
-    def __init__(self, loadable=False, flags=0, fsize=0, msize=0, offset=0, vaddr=0, shift=0, section_start=0):
+    def __init__(self, loadable: bool = False, flags: int = 0, fsize: int = 0, msize: int = 0, offset: int = 0,
+                 vaddr: int = 0, shift: int = 0, section_start: int = 0):
         self.loadable = loadable
         self.flags = flags
         self.fsize = fsize
@@ -84,6 +86,15 @@ class LayoutDescription:
         self.phdr_start = phdr_start
         self.phdr_entries = phdr_entries
         self.shdr_start = shdr_start
+
+    def sorted_loadable_segments(self) -> List[FragmentRange]:
+        ret: List[FragmentRange] = []
+        for elem in self.segment_list:
+            if elem.loadable:
+                ret.append(elem)
+
+        ret.sort(key=lambda item: item.vaddr)
+        return ret
 
 
 class Permutation:

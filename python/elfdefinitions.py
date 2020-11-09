@@ -50,6 +50,9 @@ SHT_NOBITS = c_int(8)
 PT_LOAD = c_int(1)
 PT_PHDR = c_int(6)
 
+PF_R = 0x4
+PF_X = 0x1
+
 
 # FIXME: Doku
 # /* 64 bit EHDR. */
@@ -103,7 +106,7 @@ class GElf_Phdr(Structure):
 
 # FIXME: Doku
 class Elf_Data(Structure):
-    _fields_ = [("d_align", c_uint64), ("d_buf", c_void_p), ("d_off", c_uint64), ("d_size", c_uint64), ("d_type", c_int), ("d_version", c_uint)]
+    _fields_ = [("d_align", c_uint64), ("d_buf", POINTER(c_char)), ("d_off", c_uint64), ("d_size", c_uint64), ("d_type", c_int), ("d_version", c_uint)]
 
 
 # FIXME: Doku
