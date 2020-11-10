@@ -33,8 +33,8 @@ EI_DATA = 5
 EI_OSABI = 7
 EI_ABIVERSION = 8
 
-EV_NONE = c_int(0)
-EV_CURRENT = c_int(1)
+EV_NONE = c_uint(0)
+EV_CURRENT = c_uint(1)
 
 ELF_C_READ = c_int(5)
 ELF_C_SET = c_int(6)
@@ -106,7 +106,8 @@ class GElf_Phdr(Structure):
 
 # FIXME: Doku
 class Elf_Data(Structure):
-    _fields_ = [("d_align", c_uint64), ("d_buf", POINTER(c_char)), ("d_off", c_uint64), ("d_size", c_uint64), ("d_type", c_int), ("d_version", c_uint)]
+    _fields_ = [("d_align", c_uint64), ("d_buf", POINTER(c_char)), ("d_off", c_uint64), ("d_size", c_uint64),
+                ("d_type", c_int), ("d_version", c_uint)]
 
 
 # FIXME: Doku

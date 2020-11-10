@@ -3,9 +3,10 @@
 import argparse
 import os
 from sys import stderr
-from typing import Optional
+from typing import Optional, Tuple
 
 from elfdefinitions import *
+from elfdefinitions import GElf_Shdr
 from util import *
 
 # FIXME: Doku
@@ -30,10 +31,9 @@ def print_error(text):
 
 
 # FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on
-# success. On failure returns the range `item` overlaps with and does NOT
-# insert `item` in list
-def insertTuple(item_03: (int, int), list_of_items: List[(int, int)]) -> (int, int):
+# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
+# overlaps with and does NOT insert `item` in list
+def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
     length_01 = len(list_of_items)
     if length_01 == 0:
         list_of_items.append(item_03)
@@ -53,9 +53,8 @@ def insertTuple(item_03: (int, int), list_of_items: List[(int, int)]) -> (int, i
 
 
 # FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on
-# success. On failure returns the range `item` overlaps with and does NOT
-# insert `item` in list
+# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
+# overlaps with and does NOT insert `item` in list
 def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Optional[FileFragment]:
     length_02 = len(list_of_items)
     if length_02 == 0:
@@ -108,8 +107,7 @@ def countLOADs(elf) -> int:
 # \param section List of [data ranges](@ref range) of a section
 # \param section_start Start address of this section in the new file
 #
-# \return A list of [address ranges](@ref segmentRange) fit for rearrangement
-#         or `None` in case of an error
+# \return A list of [address ranges](@ref segmentRange) fit for rearrangement or `None` in case of an error
 def segments(section: List[FileFragment], section_start: int) -> Optional[List[FragmentRange]]:
     if section is None or len(section) == 0:
         # XXX: Debug
@@ -118,29 +116,26 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
 
     ret: List[FragmentRange] = []
 
-    current: FragmentRange = FragmentRange(offset=section[0].section_offset + section[0].start,
-                                           fsize=section[0].end - section[0].start,
-                                           vaddr=section[0].address_space_info.start,
-                                           msize=section[0].address_space_info.end - section[0].address_space_info.start,
-                                           flags=section[0].address_space_info.flags,
-                                           loadable=section[0].address_space_info.loadable, section_start=section_start)
+    current = FragmentRange(offset=section[0].section_offset + section[0].start,
+                            fsize=section[0].end - section[0].start, vaddr=section[0].memory_info.start,
+                            msize=section[0].memory_info.end - section[0].memory_info.start,
+                            flags=section[0].memory_info.flags, loadable=section[0].memory_info.loadable,
+                            section_start=section_start)
     for i in range(1, len(section)):
-        if ((current.vaddr + current.msize) / PAGESIZE) == (section[i].address_space_info.start / PAGESIZE):
-            # data of tmp range will be loaded in the same page as content of
-            # current range => merge the ranges
+        if ((current.vaddr + current.msize) / PAGESIZE) == (section[i].memory_info.start / PAGESIZE):
+            # data of tmp range will be loaded in the same page as content of current range => merge the ranges
             current.fsize = section[i].section_offset + section[i].end - current.offset
-            current.msize = section[i].address_space_info.end - current.vaddr
-            current.loadable |= section[i].address_space_info.loadable
-            current.flags |= section[i].address_space_info.flags
+            current.msize = section[i].memory_info.end - current.vaddr
+            current.loadable |= section[i].memory_info.loadable
+            current.flags |= section[i].memory_info.flags
         else:
-            # data of tmp range will not be loaded in the same page as content
-            # of current range => create new range
+            # data of tmp range will not be loaded in the same page as content of current range => create new range
             ret.append(current)
             current = FragmentRange(offset=section[i].section_offset + section[i].start,
-                                    fsize=section[i].end - section[i].start, vaddr=section[i].address_space_info.start,
-                                    msize=section[i].address_space_info.end - section[i].address_space_info.start,
-                                    flags=section[i].address_space_info.flags,
-                                    loadable=section[i].address_space_info.loadable, section_start=section_start)
+                                    fsize=section[i].end - section[i].start, vaddr=section[i].memory_info.start,
+                                    msize=section[i].memory_info.end - section[i].memory_info.start,
+                                    flags=section[i].memory_info.flags, loadable=section[i].memory_info.loadable,
+                                    section_start=section_start)
 
     ret.append(current)
     # XXX: Debug
@@ -166,8 +161,7 @@ def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
 # FIXME: Doku
 # \brief Constructor for ::permutation
 #
-# \param segments List of lists of [address ranges](@ref segmentRange)
-#                 imposing constraints on the permutation
+# \param segments List of lists of [address ranges](@ref segmentRange) imposing constraints on the permutation
 # \param index The index for which a ::permutation is constructed
 # \param current_size The currently occupied size in the new file
 #
@@ -178,21 +172,20 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     ret.result = [] * ret.num_entries
 
     if current_size / PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) / PAGESIZE:
-        # mark first element because it is on the same page as the previous
-        # section
+        # mark first element because it is on the same page as the previous section
         ret.tmp[0] = -1
         ret.result[0] = -1
 
     if index != len(segments_01) - 1:
         last = segments_01[index][-1]
-        if (last.offset + last.fsize) / PAGESIZE == (segments_01[index + 1][0].offset + segments_01[index + 1][0].fsize) / PAGESIZE:
-            # mark last element because its on the same page as the next
-            # section
+        ahead = segments_01[index + 1][0]
+        if (last.offset + last.fsize) / PAGESIZE == (ahead.offset + ahead.fsize) / PAGESIZE:
+            # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
 
-    # set size of the section under the currently best permutation -
-    # conceptional - to infinity because it is not determined now
+    # set size of the section under the currently best permutation - conceptional - to infinity because it is not
+    # determined now
     # done: ggf. Vergleiche anpassen
     ret.size = -1
 
@@ -202,9 +195,8 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
 # FIXME: Doku
 # \brief Calculates offset of a section in new file.
 #
-# Constraint: new offset needs to be equal to prior offset modulo page size
-# because LOAD segments require that `p_offset` (offset in file) is equal to
-# `p_vaddr` (address in virtual address space) modulo page size.
+# Constraint: new offset needs to be equal to prior offset modulo page size because LOAD segments require that
+# `p_offset` (offset in file) is equal to `p_vaddr` (address in virtual address space) modulo page size.
 #
 # \param priorOffset Offset of section in original file
 # \param occupiedSpace Number of already occupied bytes in new file
@@ -222,29 +214,24 @@ def calculateOffset(prior_offset: int, occupied_space: int) -> int:
 # FIXME: Doku
 # \brief Evaluates the current permutation of address ranges
 #
-# Computes the size of the section if the address ranges it contains are
-# inserted in the ordering described by the current permutation. Updates the
-# currently best permutation and its resulting size if needed.
+# Computes the size of the section if the address ranges it contains are inserted in the ordering described by the
+# current permutation. Updates the currently best permutation and its resulting size if needed.
 #
-# \param perm The [state of the permutation algorithm](@ref permutation)
-#             containing the current and the best permutation
+# \param perm The [state of the permutation algorithm](@ref permutation) containing the current and the best permutation
 # \param segments The address ranges to insert
 def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
     start_01 = 0
     end_01 = 0
 
-    # look up for every position (ranges from 1 to the number of segments)
-    # which segment to insert
+    # look up for every position (ranges from 1 to the number of segments) which segment to insert
     for i in range(1, perm.num_entries + 1):
         if i == 1 and perm.tmp[0] == -1:
-            # first position and the (in the input file) first segment is
-            # marked to be inserted first
+            # first position and the (in the input file) first segment is marked to be inserted first
             start_01 = segments_02[0].offset
             end_01 = segments_02[0].offset + segments_02[0].fsize
             continue
         elif i == perm.num_entries and perm.tmp[-1] == -1:
-            # last position and the (in the input file) last segment is marked
-            # to be inserted last
+            # last position and the (in the input file) last segment is marked to be inserted last
             tmp_07 = segments_02[-1]
             end_01 = calculateOffset(tmp_07.offset, end_01) + tmp_07.fsize
             break
@@ -269,13 +256,11 @@ def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
 
 
 # FIXME: Doku
-# \brief recursive backtracking algorithm for permutation of [address ranges]
-# (@ref segmentRange)
+# \brief recursive backtracking algorithm for permutation of [address ranges](@ref segmentRange)
 #
 # \param perm The state of the algorithm
 # \param segments The address ranges to permute
-# \param index The current position where a address range is inserted (doubles
-#              as depth of recursion)
+# \param index The current position where a address range is inserted (doubles as depth of recursion)
 def recursive_permute(perm: Permutation, segments_04: List[FragmentRange], index: int):
     if index > perm.num_entries:
         # all address ranges are inserted
@@ -310,8 +295,7 @@ def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_
     section_start = 0
     for i in range(1, perm.num_entries):
         if i == 1 and perm.result[0] == -1:
-            # the first element of segments is constrained to the first
-            # position
+            # the first element of segments is constrained to the first position
             section_start = calculateOffset(segments_07[0].offset, current_size)
             segments_07[0].shift = section_start - segments_07[0].offset
             segments_07[0].section_start = section_start
@@ -322,8 +306,7 @@ def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_
             tmp_11.shift = calculateOffset(tmp_11.offset, current_size) - tmp_11.offset
             tmp_11.section_start = section_start
         else:
-            # search the element with the matching index for the current
-            # position
+            # search the element with the matching index for the current position
             for j in range(0, perm.num_entries):
                 if i == perm.result[j]:
                     tmp_12 = segments_07[j]
@@ -381,15 +364,15 @@ def roundUp(value: int, base: int) -> int:
 #
 # \return Value indicating if the address range contains the data range
 def contains(segment: FragmentRange, datarange: FileFragment) -> bool:
-    if datarange.section_offset + datarange.end <= segment.offset + segment.fsize \
-            and datarange.section_offset + datarange.start >= segment.offset:
-        return True
+    if datarange.section_offset + datarange.end <= segment.offset + segment.fsize:
+        if datarange.section_offset + datarange.start >= segment.offset:
+            return True
     return False
 
 
 # FIXME: Doku
-# \brief Computes the section and data shift of all [data ranges](@ref range)
-#        from the shift of the [address range](@ref segmentRange)
+# \brief Computes the section and data shift of all [data ranges](@ref range) from the shift of the [address range]
+#        (@ref segmentRange)
 #
 # \param ranges Array of list of [data ranges](@ref range)
 # \param segments Array of list of [address ranges](@ref segmentRange)
@@ -404,7 +387,7 @@ def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[F
 
 
 # FIXME: Doku
-def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_ehdr: bool) -> (int, int, int):
+def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_ehdr: bool) -> Tuple[int, int, int]:
     if elfclass == ELFCLASS32:
         realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf32_ehdr
         realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf32_ehdr
@@ -455,16 +438,16 @@ def mergeFragments(fragments: List[FragmentRange], start_with_ehdr: bool) -> Lis
 
         if current_page == tmp_page or (current_page + 1 == tmp_page and current_file_page + 1 == tmp_file_page):
             # FIXME: Doku
-            # data of tmp range will be loaded in the same or the following
-            # page as content of current range => merge the ranges
+            # data of tmp range will be loaded in the same or the following page as content of current range => merge
+            # the ranges
             current.fsize = item_13.offset + item_13.shift + item_13.fsize - current.offset
             current.msize = item_13.vaddr + item_13.msize - current.vaddr
             current.loadable |= item_13.loadable
             current.flags |= item_13.flags
         else:
             # FIXME: Doku
-            # data of tmp range will be loaded in a page farther away from the
-            # content of current range => create new ranges
+            # data of tmp range will be loaded in a page farther away from the content of current range => create new
+            # ranges
             ret.append(current)
             current = FragmentRange(offset=item_13.offset + item_13.shift, fsize=item_13.fsize, vaddr=item_13.vaddr,
                                     msize=item_13.msize, flags=item_13.flags, loadable=item_13.loadable)
@@ -474,7 +457,8 @@ def mergeFragments(fragments: List[FragmentRange], start_with_ehdr: bool) -> Lis
 
 
 # FIXME: Doku
-def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries: int, current_size: int):
+def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries: int, current_size: int) \
+        -> Tuple[FragmentRange, List[FragmentRange], int]:
     for i in range(0, len(segment_list) + 1):
         if i == 0:
             current_item = segment_list[i]
@@ -500,14 +484,14 @@ def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries:
                         tmp3 = segment_list[j]
                         tmp3.shift += shift
                         tmp3.section_start += shift
-                    # TODO: current_size kommunizieren
+                    # done: current_size kommunizieren
                     current_size += shift
                     # correct offset of LOAD PHDRs after inserting PHDR table
                     current_item.fsize += shift
                 segment_list.insert(i, phdr)
-                mergeFragments(segment_list, False)
-                # TODO: PHDR info zurückgeben
-                return phdr
+                segments_34 = mergeFragments(segment_list, False)
+                # done: PHDR info zurückgeben
+                return phdr, segments_34, current_size
         elif i == len(segment_list):
             previous_item = segment_list[i - 1]
             fileoffset = previous_item.offset + previous_item.fsize + previous_item.shift
@@ -524,17 +508,16 @@ def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries:
             else:
                 phdr.align = PHDR64ALIGN
             phdr.type = PT_LOAD.value
-            # TODO: current_size kommunizieren
-            # current_size = phdr.offset + phdr.fsize
+            # done: current_size kommunizieren
+            current_size = phdr.offset + phdr.fsize
             segment_list.append(phdr)
-            mergeFragments(segment_list, False)
-            # TODO: PHDR info zurückgeben
-            return phdr
+            segments_35 = mergeFragments(segment_list, False)
+            # done: PHDR info zurückgeben
+            return phdr, segments_35, current_size
         else:
             previous_item = segment_list[i - 1]
             current_item = segment_list[i]
-            # determine which start addresses the PHDR table would have if it were
-            # inserted after section i
+            # determine which start addresses the PHDR table would have if it were inserted after section i
             fileoffset = previous_item.offset + previous_item.fsize + previous_item.shift
             memoryoffset = previous_item.vaddr + previous_item.msize
             phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
@@ -543,7 +526,8 @@ def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries:
                 continue
             else:
                 # insert PHDR table after file header
-                phdr = FragmentRange(offset=phdr_start, fsize=phdr_entries * entry_size, vaddr=phdr_vaddr, loadable=True)
+                phdr = FragmentRange(offset=phdr_start, fsize=phdr_entries * entry_size, vaddr=phdr_vaddr,
+                                     loadable=True)
                 phdr.msize = phdr.fsize
                 phdr.flags = PF_R | PF_X
                 if elfclass == ELFCLASS32:
@@ -557,14 +541,14 @@ def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries:
                         tmp3 = segment_list[j]
                         tmp3.shift += shift
                         tmp3.section_start += shift
-                    # TODO: current_size kommunizieren
+                    # done: current_size kommunizieren
                     current_size += shift
                     # correct offset of LOAD PHDRs after inserting PHDR table
                     current_item.fsize += shift
                 segment_list.insert(i, phdr)
-                mergeFragments(segment_list, False)
-                # TODO: PHDR info zurückgeben
-                return phdr
+                segments_36 = mergeFragments(segment_list, False)
+                # done: PHDR info zurückgeben
+                return phdr, segments_36, current_size
 
 
 # FIXME: Doku
@@ -576,9 +560,9 @@ def insertPHDR(segment_list: List[FragmentRange], elfclass: c_int, phdr_entries:
 # \param elfclass Elf Class (32bit or 64bit)
 # \param permuteRanges Flag if the address ranges of sections should be permuted
 #
-# \return The [description of the file layout](@ref layoutDescription) of the
-#         output file
-def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int, permute_ranges: bool) -> LayoutDescription:
+# \return The [description of the file layout](@ref layoutDescription) of the output file
+def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int,
+                           permute_ranges: bool) -> LayoutDescription:
     length_ranges = len(ranges_13)
     ret: LayoutDescription = LayoutDescription(segment_num=length_ranges)
 
@@ -592,7 +576,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
 
     segments_21: List[List[FragmentRange]] = [[]] * length_ranges
     # ignore section 0 (that is not a "real" section)
-    for i in (1, length_ranges):
+    for i in range(1, length_ranges):
         # determine the address ranges from the data ranges of a section
         segments_21[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
         loads += countLoadableSegmentRanges(segments_21[i])
@@ -622,8 +606,11 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     ret.segment_list = mergeFragments(fragments, True)
     ret.list_entries = len(ret.segment_list)
 
-    # TODO: phdr kommunizieren
-    phdr = insertPHDR(ret.segment_list, elfclass, ret.list_entries + old_entries, current_size)
+    # done: phdr kommunizieren
+    (phdr, ret.segment_list, current_size) = insertPHDR(ret.segment_list, elfclass, ret.list_entries + old_entries, current_size)
+    ret.phdr_start = phdr.offset
+    ret.phdr_vaddr = phdr.vaddr
+    ret.phdr_entries = ret.list_entries + old_entries
     calculateShift(ranges_13, ret.segments)
 
     # determine start of SHDR table
@@ -641,9 +628,8 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
 # \param ranges Ranges specified via command line
 # \param section_number Number of sections in `src`
 #
-# \return a List of lists containing the ranges (with additional information)
-#         per section
-def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c_size_t) -> List[List[FileFragment]]:
+# \return a List of lists containing the ranges (with additional information) per section
+def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], section_number: c_size_t) -> List[List[FileFragment]]:
     # number of segments in source file
     phdrnum: c_size_t[int] = c_size_t(0)
     if libelf.elf_getphdrnum(src, byref(phdrnum)) != 0:
@@ -657,19 +643,21 @@ def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c
     for i in range(0, section_number.value):
         section_ranges[i] = []
 
-        srcscn: c_void_p = libelf.elf_getscn(src, c_int(i))
+        srcscn: c_void_p = libelf.elf_getscn(src, c_size_t(i))
         if srcscn is None:
-            print_error("Could not retrieve source section data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+            print_error(
+                "Could not retrieve source section data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
             raise cu
 
-        srcshdr = GElf_Shdr()
+        srcshdr: GElf_Shdr = GElf_Shdr()
         if libelf.gelf_getshdr(srcscn, byref(srcshdr)) is None:
-            print_error("Could not retrieve source shdr data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+            print_error(
+                "Could not retrieve source shdr data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
             raise cu
 
-        # split ranges in section ranges and add layout data (ranges that end
-        # in section i)
-        while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
+        offset: int = 0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size
+        # split ranges in section ranges and add layout data (ranges that end in section i)
+        while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + offset:
             current_fragment = FileFragment()
 
             # determine start and end addresses of section range in file
@@ -678,30 +666,32 @@ def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c
                 current_fragment.start = 0
                 current_fragment.end = 0
             else:
-                # determine start of range under construction relative to the
-                # start of its containing section
+                # determine start of range under construction relative to the start of its containing section
                 if ranges_27[r][0] < srcshdr.sh_offset:
-                    # range under construction starts at the beginning of its
-                    # containing section
+                    # range under construction starts at the beginning of its containing section
                     current_fragment.start = 0
                 else:
                     current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
 
-                # determine end of range under construction relative to the end
-                # of its containing section
+                # determine end of range under construction relative to the end of its containing section
                 if ranges_27[r][1] < srcshdr.sh_offset + srcshdr.sh_size:
                     current_fragment.end = ranges_27[r][1] - srcshdr.sh_offset
                 else:
-                    # range under construction ends at the end of its
-                    # containing section
-                    current_fragment.end = srcshdr.sh_size
+                    # range under construction ends at the end of its containing section
+                    current_fragment.end = srcshdr.sh_size.value
 
-                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-                    print_error("In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start, srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
+                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize.value != 0:
+                    print_error(
+                        "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
+                            i, current_fragment.start % srcshdr.sh_entsize.value, current_fragment.start,
+                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset.value))
                     raise cu
 
-                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-                    print_error("In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end, srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
+                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize.value != 0:
+                    print_error(
+                        "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
+                            i, current_fragment.end % srcshdr.sh_entsize.value, current_fragment.end,
+                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset.value))
                     raise cu
 
             current_fragment.section_align = srcshdr.sh_addralign
@@ -711,45 +701,50 @@ def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c
             for j in range(0, phdrnum.value):
                 srcphdr = GElf_Phdr()
                 if libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)) is None:
-                    print_error("Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+                    print_error(
+                        "Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
 
                 if srcphdr.p_type != PT_LOAD:
-                    # not a loadable segment so it contains no data about the
-                    # memory layout of any part of the input file
+                    # not a loadable segment so it contains no data about the memory layout of any part of the input
+                    # file
                     continue
 
-                if srcphdr.p_offset >= srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size) or srcphdr.p_offset + (srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS else srcphdr.p_filesz) <= srcshdr.sh_offset:
+                offset_02: int = 0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size.value
+                offset_segment: int = srcphdr.p_memsz.value if srcshdr.sh_type == SHT_NOBITS else srcphdr.p_filesz.value
+                if srcphdr.p_offset.value >= srcshdr.sh_offset.value + offset_02 \
+                        or srcphdr.p_offset.value + offset_segment <= srcshdr.sh_offset.value:
                     # loadable segment but does not load this section
                     continue
 
-                current_fragment.address_space_info.loadable = True
-                current_fragment.address_space_info.flags = srcphdr.p_flags
-                current_fragment.address_space_info.align = srcphdr.p_align
+                current_fragment.memory_info.loadable = True
+                current_fragment.memory_info.flags = srcphdr.p_flags.value
+                current_fragment.memory_info.align = srcphdr.p_align.value
 
                 if srcshdr.sh_type == SHT_NOBITS:
                     # range contains whole NOBITS section
-                    current_fragment.address_space_info.start = srcshdr.sh_addr
-                    current_fragment.address_space_info.to = current_fragment.address_space_info.start + srcshdr.sh_size
+                    current_fragment.memory_info.start = srcshdr.sh_addr.value
+                    current_fragment.memory_info.to = current_fragment.memory_info.start + srcshdr.sh_size.value
                 else:
                     # determine start and end addresses of section range in memory
-                    if srcphdr.p_offset <= srcshdr.sh_offset:
+                    if srcphdr.p_offset.value <= srcshdr.sh_offset.value:
                         # segment starts before section starts
-                        current_fragment.address_space_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
+                        current_fragment.memory_info.start = srcphdr.p_vaddr.value + srcshdr.sh_offset.value \
+                                                             + current_fragment.start - srcphdr.p_offset.value
                     else:
                         # segment starts after section starts
-                        current_fragment.address_space_info.start = srcphdr.p_offset - srcshdr.sh_offset
+                        current_fragment.memory_info.start = srcphdr.p_offset.value - srcshdr.sh_offset.value
 
-                    current_fragment.address_space_info.end = current_fragment.address_space_info.start + (current_fragment.end - current_fragment.start)
+                    current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
 
                 break
 
             insertRange(current_fragment, section_ranges[i])
             r += 1
 
-        # split ranges in section ranges and add layout data (range that begins
-        # in section i but does not end there)
-        if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size):
+        # split ranges in section ranges and add layout data (range that begins in section i but does not end there)
+        offset_03: int = 0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size
+        if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset_03:
             current_fragment = FileFragment()
 
             # determine start and end addresses of section range in file
@@ -758,24 +753,27 @@ def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c
                 current_fragment.start = 0
                 current_fragment.end = 0
             else:
-                # determine start of range under construction relative to the
-                # start of its containing section
+                # determine start of range under construction relative to the start of its containing section
                 if ranges_27[r][0] < srcshdr.sh_offset:
-                    # range under construction starts at the beginning of its
-                    # containing section
+                    # range under construction starts at the beginning of its containing section
                     current_fragment.start = 0
                 else:
                     current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
-                # range under construction ends at the end of its containing
-                # section
+                # range under construction ends at the end of its containing section
                 current_fragment.end = srcshdr.sh_size
 
                 if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-                    print_error("In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start, srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
+                    print_error(
+                        "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
+                            i, current_fragment.start % srcshdr.sh_entsize.value, current_fragment.start,
+                            srcshdr.sh_entsize.value, current_fragment.start + srcshdr.sh_offset.value))
                     raise cu
 
                 if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-                    print_error("In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end, srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
+                    print_error(
+                        "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
+                            i, current_fragment.end % srcshdr.sh_entsize.value, current_fragment.end,
+                            srcshdr.sh_entsize.value, current_fragment.end + srcshdr.sh_offset.value))
                     raise cu
 
             current_fragment.section_align = srcshdr.sh_addralign
@@ -785,36 +783,40 @@ def computeSectionRanges(src: c_void_p, ranges_27: (int, int), section_number: c
             for j in range(0, phdrnum.value):
                 srcphdr = GElf_Phdr()
                 if libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)) is None:
-                    print_error("Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+                    print_error(
+                        "Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
 
                 if srcphdr.p_type != PT_LOAD:
-                    # not a loadable segment so it contains no data about the
-                    # memory layout of any part of the input file
+                    # not a loadable segment so it contains no data about the memory layout of any part of the input file
                     continue
 
-                if srcphdr.p_offset >= srcshdr.sh_offset + (0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size) or srcphdr.p_offset + (srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS else srcphdr.p_filesz) <= srcshdr.sh_offset:
+                offset_04: int = 0 if srcshdr.sh_type == SHT_NOBITS else srcshdr.sh_size.value
+                offset_segment_02: int = srcphdr.p_memsz.value if srcshdr.sh_type == SHT_NOBITS else srcphdr.p_filesz.value
+                if srcphdr.p_offset.value >= srcshdr.sh_offset.value + offset_04 \
+                        or srcphdr.p_offset.value + offset_segment_02 <= srcshdr.sh_offset.value:
                     # loadable segment but does not load this section
                     continue
 
-                current_fragment.address_space_info.loadable = True
-                current_fragment.address_space_info.flags = srcphdr.p_flags
-                current_fragment.address_space_info.align = srcphdr.p_align
+                current_fragment.memory_info.loadable = True
+                current_fragment.memory_info.flags = srcphdr.p_flags.value
+                current_fragment.memory_info.align = srcphdr.p_align.value
 
                 if srcshdr.sh_type == SHT_NOBITS:
                     # range contains whole NOBITS section
-                    current_fragment.address_space_info.start = srcshdr.sh_addr
-                    current_fragment.address_space_info.end = current_fragment.address_space_info.start + srcshdr.sh_size
+                    current_fragment.memory_info.start = srcshdr.sh_addr.value
+                    current_fragment.memory_info.end = current_fragment.memory_info.start + srcshdr.sh_size.value
                 else:
                     # determine start and end addresses of section range in memory
-                    if srcphdr.p_offset <= srcshdr.sh_offset:
+                    if srcphdr.p_offset.value <= srcshdr.sh_offset.value:
                         # segment starts before section starts
-                        current_fragment.address_space_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
+                        current_fragment.memory_info.start = srcphdr.p_vaddr.value + srcshdr.sh_offset.value \
+                                                             + current_fragment.start - srcphdr.p_offset.value
                     else:
                         # segment starts after section starts
-                        current_fragment.address_space_info.start = srcphdr.p_offset - srcshdr.sh_offset
+                        current_fragment.memory_info.start = srcphdr.p_offset.value - srcshdr.sh_offset.value
 
-                    current_fragment.address_space_info.end = current_fragment.address_space_info.start + (current_fragment.end - current_fragment.start)
+                    current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
 
                 break
 
@@ -840,7 +842,7 @@ def calculateSectionSize(section: List[FileFragment]):
 
 
 # FIXME: Doku
-def shrinkelf(args_01, ranges_34: (int, int)):
+def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
     # --------------------------------------------------------------------------- #
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
@@ -883,14 +885,13 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             print_error("elf_flagelf() failed: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
-        # Specify fill byte for padding -- especially the padding within the
-        # .text section. Set to 0xcc because this generates an interrupt on the
-        # target platform x86_64.
+        # Specify fill byte for padding -- especially the padding within the .text section. Set to 0xcc because this
+        # generates an interrupt on the target platform x86_64.
         libelf.elf_fill(0xcc)
 
-    # --------------------------------------------------------------------------- #
-    #  Copy executable header                                                     #
-    # --------------------------------------------------------------------------- #
+        # --------------------------------------------------------------------------- #
+        #  Copy executable header                                                     #
+        # --------------------------------------------------------------------------- #
         # ELF class of input file
         elfclass: c_int = libelf.gelf_getclass(srce)
         if elfclass == ELFCLASSNONE.value:
@@ -903,15 +904,12 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             print_error("Could not retrieve executable header from input file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
-        #  gelf_newehdr sets automatically the magic numbers of an ELF header,
-        #  the EI_CLASS byte according to elfclass, the EI_VERSION byte and
-        #  e_version to the version you told the library to use.
+        # gelf_newehdr sets automatically the magic numbers of an ELF header, the EI_CLASS byte according to elfclass,
+        # the EI_VERSION byte and e_version to the version you told the library to use.
         #
-        #  The EI_DATA byte is set to ELFDATANONE, e_machine to EM_NONE and
-        #  e_type to ELF_K_NONE.
+        # The EI_DATA byte is set to ELFDATANONE, e_machine to EM_NONE and e_type to ELF_K_NONE.
         #
-        #  Other members are set to zero. This includes the EI_OSABI and
-        #  EI_ABIVERSION bytes.
+        # Other members are set to zero. This includes the EI_OSABI and EI_ABIVERSION bytes.
 
         # executable header of output file
         dstehdr_pointer: POINTER(GElf_Ehdr) = libelf.gelf_newehdr(dste, elfclass)
@@ -933,12 +931,12 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             print_error("Could not update ELF structures (Header): " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
-    # --------------------------------------------------------------------------- #
-    #  Copy program headers                                                       #
-    # --------------------------------------------------------------------------- #
+        # --------------------------------------------------------------------------- #
+        #  Copy program headers                                                       #
+        # --------------------------------------------------------------------------- #
         # number of sections in input file
         scnnum: c_size_t[int] = c_size_t(0)
-        if libelf.elf_getshdrnum(srce, pointer(scnnum)) != 0:
+        if libelf.elf_getshdrnum(srce, byref(scnnum)) != 0:
             print_error("Could not retrieve number of sections from input file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -953,10 +951,11 @@ def shrinkelf(args_01, ranges_34: (int, int)):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, args_01.permutate)
-        dstehdr.e_phoff = desc.phdr_start
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass,
+                                                         args_01.permute)
+        dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
-        dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, desc.phdr_entries)
+        dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
         if dstphdrs is None:
             print_error("Could not create PHDR table for output file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
@@ -973,12 +972,12 @@ def shrinkelf(args_01, ranges_34: (int, int)):
         # construct new PHDR table from old PHDR table
         for i in range(0, phdrnum.value):
             if libelf.gelf_getphdr(srce, c_int(i), byref(srcphdr)) is None:
-                print_error("Could not retrieve phdr structure {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+                print_error(
+                    "Could not retrieve phdr structure {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
             if srcphdr.p_type != PT_LOAD:
-                # copy values of non-LOAD segments - addresses and offsets will
-                # be fixed later
+                # copy values of non-LOAD segments - addresses and offsets will be fixed later
                 dstphdrs[new_index].p_type = srcphdr.p_type
                 dstphdrs[new_index].p_offset = srcphdr.p_offset
                 dstphdrs[new_index].p_vaddr = srcphdr.p_vaddr
@@ -989,20 +988,19 @@ def shrinkelf(args_01, ranges_34: (int, int)):
                 dstphdrs[new_index].p_align = srcphdr.p_align
                 new_index += 1
             elif first_load:
-                # replace first LOAD segment of input file with all LOAD segments
-                # of output file
+                # replace first LOAD segment of input file with all LOAD segments of output file
                 first_load = False
 
                 tmp_55: FragmentRange
                 for tmp_55 in desc.sorted_loadable_segments():
                     dstphdrs[new_index].p_type = PT_LOAD
-                    dstphdrs[new_index].p_offset = tmp_55.offset + tmp_55.shift
-                    dstphdrs[new_index].p_vaddr = tmp_55.vaddr
-                    dstphdrs[new_index].p_paddr = tmp_55.vaddr
-                    dstphdrs[new_index].p_filesz = tmp_55.fsize
-                    dstphdrs[new_index].p_memsz = tmp_55.msize
-                    dstphdrs[new_index].p_flags = tmp_55.flags
-                    dstphdrs[new_index].p_align = PAGESIZE
+                    dstphdrs[new_index].p_offset = c_uint64(tmp_55.offset + tmp_55.shift)
+                    dstphdrs[new_index].p_vaddr = c_uint64(tmp_55.vaddr)
+                    dstphdrs[new_index].p_paddr = c_uint64(tmp_55.vaddr)
+                    dstphdrs[new_index].p_filesz = c_uint64(tmp_55.fsize)
+                    dstphdrs[new_index].p_memsz = c_uint64(tmp_55.msize)
+                    dstphdrs[new_index].p_flags = c_uint32(tmp_55.flags)
+                    dstphdrs[new_index].p_align = c_uint64(PAGESIZE)
                     new_index += 1
             else:
                 # skip all other LOAD segments
@@ -1012,25 +1010,26 @@ def shrinkelf(args_01, ranges_34: (int, int)):
         for i in range(0, desc.phdr_entries):
             if dstphdrs[i].p_type != PT_LOAD:
                 for tmp_56 in desc.segment_list:
-                    if tmp_56.vaddr <= dstphdrs[i].p_vaddr and dstphdrs[i].p_vaddr + dstphdrs[i].p_filesz <= tmp_56.vaddr + tmp_56.fsize:
-                        dstphdrs[i].p_offset = tmp_56.offset + (dstphdrs[i].p_vaddr - tmp_56.vaddr)
+                    if tmp_56.vaddr <= dstphdrs[i].p_vaddr.value \
+                            and dstphdrs[i].p_vaddr.value + dstphdrs[i].p_filesz.value <= tmp_56.vaddr + tmp_56.fsize:
+                        dstphdrs[i].p_offset = c_uint64(tmp_56.offset + (dstphdrs[i].p_vaddr.value - tmp_56.vaddr))
                         break
 
                 if dstphdrs[i].p_type == PT_PHDR:
                     # fix up PHDR segment
-                    dstphdrs[i].p_vaddr = desc.phdr_vaddr
+                    dstphdrs[i].p_vaddr = c_uint64(desc.phdr_vaddr)
                     dstphdrs[i].p_paddr = dstphdrs[i].p_vaddr
-                    dstphdrs[i].p_offset = desc.phdr_start
+                    dstphdrs[i].p_offset = c_uint64(desc.phdr_start)
                     if elfclass == ELFCLASS32:
-                        dstphdrs[i].p_filesz = desc.phdr_entries * sizeof_elf32_phdr
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf32_phdr)
                     else:
-                        dstphdrs[i].p_filesz = desc.phdr_entries * sizeof_elf64_phdr
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf64_phdr)
 
                     dstphdrs[i].p_memsz = dstphdrs[i].p_filesz
 
-    # --------------------------------------------------------------------------- #
-    # Copy sections and section headers                                           #
-    # --------------------------------------------------------------------------- #
+        # --------------------------------------------------------------------------- #
+        # Copy sections and section headers                                           #
+        # --------------------------------------------------------------------------- #
         # current section header of input file
         srcshdr = GElf_Shdr()
         # current section header of output file
@@ -1058,7 +1057,7 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             # done: buffer bereitstellen
             # allocate buffers for the data of the output file
             for tmp_89 in section_ranges[i]:
-                tmp_89.buffer = create_string_buffer(tmp_89.end - tmp_89.start)
+                tmp_89.buffer = create_string_buffer(tmp_89.size())
 
             # current data of current section of input file
             srcdata_pointer: POINTER(Elf_Data) = libelf.elf_getdata(srcscn, None)
@@ -1069,8 +1068,8 @@ def shrinkelf(args_01, ranges_34: (int, int)):
                     # section is NOBITS section => no data to copy
                     continue
 
-                srcdata_begin = srcdata.d_off
-                srcdata_end = srcdata.d_off + srcdata.d_size
+                srcdata_begin: int = srcdata.d_off.value
+                srcdata_end = srcdata.d_off.value + srcdata.d_size.value
                 for item_01 in section_ranges[i]:
                     if item_01.end <= srcdata_begin:
                         # source data begins after range ends
@@ -1100,8 +1099,8 @@ def shrinkelf(args_01, ranges_34: (int, int)):
                     # done: Daten übertragen
                     # memcpy(item_01.buffer + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
                     memmove(addressof(item_01.buffer) + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
-                    item_01.d_version = srcdata.d_version
-                    item_01.d_type = srcdata.d_type
+                    item_01.d_version = srcdata.d_version.value
+                    item_01.d_type = srcdata.d_type.value
 
                 srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
 
@@ -1109,17 +1108,18 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             for item_02 in section_ranges[i]:
                 dstdata: Elf_Data = libelf.elf_newdata(dstscn)
                 if dstdata is None:
-                    print_error("Could not add data to section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
+                    print_error(
+                        "Could not add data to section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
 
                 # alignment does not matter here because the position of the data range is controlled via d_off
-                dstdata.d_align = 1
-                dstdata.d_type = item_02.d_type
-                dstdata.d_version = item_02.d_version
+                dstdata.d_align = c_uint64(1)
+                dstdata.d_type = c_int(item_02.d_type)
+                dstdata.d_version = c_uint(item_02.d_version)
                 # done: buffer in passenden Datentypen umwandeln
                 dstdata.d_buf = cast(item_02.buffer, POINTER(c_char))
-                dstdata.d_off = item_02.start + item_02.fragment_shift
-                dstdata.d_size = item_02.end - item_02.start
+                dstdata.d_off = c_uint64(item_02.start + item_02.fragment_shift)
+                dstdata.d_size = c_uint64(item_02.end - item_02.start)
 
             # construct the SHDR entry of current section
             dstshdr.sh_info = srcshdr.sh_info
@@ -1128,7 +1128,7 @@ def shrinkelf(args_01, ranges_34: (int, int)):
             dstshdr.sh_addr = srcshdr.sh_addr
             dstshdr.sh_flags = srcshdr.sh_flags
             dstshdr.sh_addralign = srcshdr.sh_addralign
-            dstshdr.sh_offset = srcshdr.sh_offset + section_ranges[i][0].section_shift
+            dstshdr.sh_offset = c_uint64(srcshdr.sh_offset.value + section_ranges[i][0].section_shift)
             if srcshdr.sh_type == SHT_NOBITS:
                 dstshdr.sh_size = srcshdr.sh_size
             else:
@@ -1140,7 +1140,7 @@ def shrinkelf(args_01, ranges_34: (int, int)):
                 print_error("Could not update ELF structures (Sections): " + libelf.elf_errmsg(c_int(-1)))
                 raise cu
 
-        dstehdr.e_shoff = desc.shdr_start
+        dstehdr.e_shoff = c_uint64(desc.shdr_start)
 
         # write new ELF file
         if libelf.elf_update(dste, ELF_C_WRITE) == -1:
@@ -1175,9 +1175,11 @@ if __name__ == "__main__":
     # noinspection PyTypeChecker
     parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("file", help="the file, which should be shrunk")
-    parser.add_argument("-k", "--keep", metavar="RANGE", action='append', help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
+    parser.add_argument("-k", "--keep", metavar="RANGE", action='append',
+                        help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
     parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
-    parser.add_argument("-p", "--permute", action='store_true', help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
+    parser.add_argument("-p", "--permute", action='store_true',
+                        help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()
 
@@ -1191,7 +1193,7 @@ if __name__ == "__main__":
             for line in open(args.keep_file):
                 args.keep.append(line)
 
-    ranges: List[(int, int)] = []
+    ranges: List[Tuple[int, int]] = []
     error = False
     for item in args.keep:
         if ":" in item:
@@ -1204,19 +1206,22 @@ if __name__ == "__main__":
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
 
             try:
                 length = int(frag_desc[1], base=0)
             except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
 
             if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
                 error = True
                 continue
             if length < 1:
@@ -1226,7 +1231,7 @@ if __name__ == "__main__":
 
             tmp = insertTuple((start, start + length), ranges)
             if tmp is not None:
-                print_error(item + "overlaps with" + tmp)
+                print_error(item + "overlaps with" + str(tmp))
                 error = True
                 continue
         elif "-" in item:
@@ -1239,29 +1244,33 @@ if __name__ == "__main__":
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
 
             try:
                 end = int(frag_desc[1], base=0)
             except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
 
             if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
                 error = True
                 continue
             if end <= start:
-                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(end) + ") - ignoring!")
+                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(end)
+                            + ") - ignoring!")
                 error = True
                 continue
 
             tmp = insertTuple((start, end), ranges)
             if tmp is not None:
-                print_error(item + "overlaps with" + tmp)
+                print_error(item + "overlaps with" + str(tmp))
                 error = True
                 continue
         else:
@@ -1290,7 +1299,5 @@ if __name__ == "__main__":
         # generate own output file name
         args.output_file = args.file + FILESUFFIX
 
-    # XXX: Debug
-    print(ranges)
     shrinkelf(args, ranges)
     exit(cu.exitstatus)

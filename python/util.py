@@ -1,4 +1,4 @@
-from ctypes import Array, c_char
+from ctypes import Array
 from typing import List
 
 
@@ -24,13 +24,13 @@ class FileFragment:
     section_align: int
     section_shift: int
     fragment_shift: int             # data_shift
-    buffer: Array[c_char]
+    buffer: Array
     d_type: int
     d_version: int
-    address_space_info: MemoryFragment
+    memory_info: MemoryFragment
 
-    def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0, buffer=None, d_type=0, d_version=0,
-                 address_space_info=MemoryFragment()):
+    def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0,
+                 buffer=None, d_type=0, d_version=0, memory_info=MemoryFragment()):
         self.start = start
         self.end = end
         self.section_offset = section_offset
@@ -40,7 +40,10 @@ class FileFragment:
         self.buffer = buffer
         self.d_type = d_type
         self.d_version = d_version
-        self.address_space_info = address_space_info
+        self.memory_info = memory_info
+
+    def size(self):
+        return self.end - self.start
 
 
 class FragmentRange:
