@@ -173,7 +173,7 @@ libelf.gelf_update_shdr.argtypes = [c_void_p, POINTER(GElf_Shdr)]
 libelf.gelf_update_shdr.restype = c_int
 
 libelf.gelf_newphdr.argtypes = [c_void_p, c_size_t]
-libelf.gelf_newphdr.restype = c_void_p
+libelf.gelf_newphdr.restype = POINTER(GElf_Phdr)
 
 libelf.gelf_getphdr.argtypes = [c_void_p, c_int, POINTER(GElf_Phdr)]
 libelf.gelf_getphdr.restype = POINTER(GElf_Phdr)

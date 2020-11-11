@@ -138,8 +138,6 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
                                     section_start=section_start)
 
     ret.append(current)
-    # XXX: Debug
-    print(ret)
     return ret
 
 
@@ -412,7 +410,7 @@ def mergeFragments(fragments: List[FragmentRange], start_with_ehdr: bool) -> Lis
     if start_with_ehdr:
         current.offset = 0
         current.fsize = fragments[0].offset + fragments[0].shift + fragments[0].fsize
-        current.vaddr = (fragments[0].vaddr / PAGESIZE) * PAGESIZE
+        current.vaddr = int((fragments[0].vaddr // PAGESIZE) * PAGESIZE)
         current.msize = current.fsize
         current.flags = fragments[0].flags
         current.loadable = True
@@ -960,9 +958,6 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             print_error("Could not create PHDR table for output file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
-        # XXX: Debug
-        print("descriptor", desc)
-
         # current PHDR entry of input file
         srcphdr = GElf_Phdr()
         # index of current PHDR entry in output file
@@ -1010,9 +1005,9 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         for i in range(0, desc.phdr_entries):
             if dstphdrs[i].p_type != PT_LOAD:
                 for tmp_56 in desc.segment_list:
-                    if tmp_56.vaddr <= dstphdrs[i].p_vaddr.value \
-                            and dstphdrs[i].p_vaddr.value + dstphdrs[i].p_filesz.value <= tmp_56.vaddr + tmp_56.fsize:
-                        dstphdrs[i].p_offset = c_uint64(tmp_56.offset + (dstphdrs[i].p_vaddr.value - tmp_56.vaddr))
+                    if tmp_56.vaddr <= dstphdrs[i].p_vaddr \
+                            and dstphdrs[i].p_vaddr + dstphdrs[i].p_filesz <= tmp_56.vaddr + tmp_56.fsize:
+                        dstphdrs[i].p_offset = c_uint64(tmp_56.offset + (dstphdrs[i].p_vaddr - tmp_56.vaddr))
                         break
 
                 if dstphdrs[i].p_type == PT_PHDR:
@@ -1036,7 +1031,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         dstshdr = GElf_Shdr()
         # lib creates section 0 automatically so we start with section 1
         for i in range(1, scnnum.value):
-            srcscn: c_void_p = libelf.elf_getscn(srce, c_int(i))
+            srcscn: c_void_p = libelf.elf_getscn(srce, c_size_t(i))
             if srcscn is None:
                 print_error("Could not retrieve section {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
@@ -1062,22 +1057,23 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             # current data of current section of input file
             srcdata_pointer: POINTER(Elf_Data) = libelf.elf_getdata(srcscn, None)
             # copy data in data buffers for output file
-            while srcdata_pointer is not None:
+            while srcdata_pointer:
                 srcdata = srcdata_pointer.contents
-                if srcdata.d_buf is None:
+                if not srcdata.d_buf:
                     # section is NOBITS section => no data to copy
+                    srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
                     continue
 
-                srcdata_begin: int = srcdata.d_off.value
-                srcdata_end = srcdata.d_off.value + srcdata.d_size.value
+                srcdata_begin: int = srcdata.d_off
+                srcdata_end = srcdata.d_off + srcdata.d_size
                 for item_01 in section_ranges[i]:
                     if item_01.end <= srcdata_begin:
                         # source data begins after range ends
+                        srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
                         continue
 
                     if srcdata_end <= item_01.start:
-                        # source data ends before range ( and the following range
-                        # because the list is sorted) begins
+                        # source data ends before range (and the following range because the list is sorted) begins
                         break
 
                     if item_01.start <= srcdata_begin:
@@ -1098,9 +1094,10 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
 
                     # done: Daten übertragen
                     # memcpy(item_01.buffer + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
-                    memmove(addressof(item_01.buffer) + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
-                    item_01.d_version = srcdata.d_version.value
-                    item_01.d_type = srcdata.d_type.value
+                    # done: srcdata.d_buf[srcstart] liefert Type bytes, das ist kein ctypes
+                    memmove(addressof(item_01.buffer) + dststart, addressof(srcdata.d_buf.contents) + srcstart, srcend - srcstart)
+                    item_01.d_version = srcdata.d_version
+                    item_01.d_type = srcdata.d_type
 
                 srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
 
@@ -1128,7 +1125,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             dstshdr.sh_addr = srcshdr.sh_addr
             dstshdr.sh_flags = srcshdr.sh_flags
             dstshdr.sh_addralign = srcshdr.sh_addralign
-            dstshdr.sh_offset = c_uint64(srcshdr.sh_offset.value + section_ranges[i][0].section_shift)
+            dstshdr.sh_offset = c_uint64(srcshdr.sh_offset + section_ranges[i][0].section_shift)
             if srcshdr.sh_type == SHT_NOBITS:
                 dstshdr.sh_size = srcshdr.sh_size
             else:
@@ -1164,7 +1161,6 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             libelf.elf_end(srce)
         if cu.level >= 1:
             os.close(srcfd)
-        print(cu.level, cu.exitstatus)
 
 
 # FIXME: Doku
