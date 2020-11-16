@@ -6,7 +6,6 @@ from sys import stderr
 from typing import Optional, Tuple
 
 from elfdefinitions import *
-from elfdefinitions import GElf_Shdr
 from util import *
 
 # FIXME: Doku
@@ -91,7 +90,7 @@ def countLOADs(elf) -> int:
 
     phdr = GElf_Phdr()
     for i in range(0, phdrnum.value):
-        if libelf.gelf_getphdr(elf, i, byref(phdr)) is None:
+        if not libelf.gelf_getphdr(elf, i, byref(phdr)):
             print_error("Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
             raise cu
 
@@ -642,13 +641,13 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
         section_ranges[i] = []
 
         srcscn: c_void_p = libelf.elf_getscn(src, c_size_t(i))
-        if srcscn is None:
+        if not srcscn:
             print_error(
                 "Could not retrieve source section data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
             raise cu
 
         srcshdr: GElf_Shdr = GElf_Shdr()
-        if libelf.gelf_getshdr(srcscn, byref(srcshdr)) is None:
+        if not libelf.gelf_getshdr(srcscn, byref(srcshdr)):
             print_error(
                 "Could not retrieve source shdr data for section {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
             raise cu
@@ -698,7 +697,7 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
             # memory layout of section range
             for j in range(0, phdrnum.value):
                 srcphdr = GElf_Phdr()
-                if libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)) is None:
+                if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
                     print_error(
                         "Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
@@ -780,7 +779,7 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
             # memory layout of section range
             for j in range(0, phdrnum.value):
                 srcphdr = GElf_Phdr()
-                if libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)) is None:
+                if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
                     print_error(
                         "Could not retrieve source phdr structure {0}: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu
@@ -859,7 +858,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
     try:
         # ELF representation of input file
         srce: c_void_p = libelf.elf_begin(c_int(srcfd), ELF_C_READ, None)
-        if srce is None:
+        if not srce:
             print_error("Could not retrieve ELF structures from input file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -873,7 +872,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         cu.level += 1
         # ELF representation of output file
         dste: c_void_p = libelf.elf_begin(c_int(dstfd), ELF_C_WRITE, None)
-        if dste is None:
+        if not dste:
             print_error("Could not create ELF structures for output file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -898,7 +897,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
 
         # executable header of input file
         srcehdr = GElf_Ehdr()
-        if libelf.gelf_getehdr(srce, pointer(srcehdr)) is None:
+        if not libelf.gelf_getehdr(srce, pointer(srcehdr)):
             print_error("Could not retrieve executable header from input file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -911,7 +910,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
 
         # executable header of output file
         dstehdr_pointer: POINTER(GElf_Ehdr) = libelf.gelf_newehdr(dste, elfclass)
-        if dstehdr_pointer is None:
+        if not dstehdr_pointer:
             print_error("Could not create executable header of output file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -954,7 +953,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
-        if dstphdrs is None:
+        if not dstphdrs:
             print_error("Could not create PHDR table for output file: " + libelf.elf_errmsg(c_int(-1)))
             raise cu
 
@@ -966,7 +965,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         first_load: bool = True
         # construct new PHDR table from old PHDR table
         for i in range(0, phdrnum.value):
-            if libelf.gelf_getphdr(srce, c_int(i), byref(srcphdr)) is None:
+            if not libelf.gelf_getphdr(srce, c_int(i), byref(srcphdr)):
                 print_error(
                     "Could not retrieve phdr structure {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
@@ -1032,20 +1031,20 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         # lib creates section 0 automatically so we start with section 1
         for i in range(1, scnnum.value):
             srcscn: c_void_p = libelf.elf_getscn(srce, c_size_t(i))
-            if srcscn is None:
+            if not srcscn:
                 print_error("Could not retrieve section {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
-            if libelf.gelf_getshdr(srcscn, byref(srcshdr)) is None:
+            if not libelf.gelf_getshdr(srcscn, byref(srcshdr)):
                 print_error("Could not retrieve shdr structure for section {0} of input file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
             dstscn: c_void_p = libelf.elf_newscn(dste)
-            if dstscn is None:
+            if not dstscn:
                 print_error("Could not create section {0} in output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
-            if libelf.gelf_getshdr(dstscn, byref(dstshdr)) is None:
+            if not libelf.gelf_getshdr(dstscn, byref(dstshdr)):
                 print_error("Could not retrieve shdr structure for section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                 raise cu
 
@@ -1104,7 +1103,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             # construct data descriptors of current section
             for item_02 in section_ranges[i]:
                 dstdata: Elf_Data = libelf.elf_newdata(dstscn)
-                if dstdata is None:
+                if not dstdata:
                     print_error(
                         "Could not add data to section {0} of output file: {1}".format(i, libelf.elf_errmsg(c_int(-1))))
                     raise cu

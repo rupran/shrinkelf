@@ -47,8 +47,8 @@ ELFCLASS32 = c_int(1)
 
 SHT_NOBITS = c_int(8)
 
-PT_LOAD = c_int(1)
-PT_PHDR = c_int(6)
+PT_LOAD = c_uint32(1)
+PT_PHDR = c_uint32(6)
 
 PF_R = 0x4
 PF_X = 0x1
