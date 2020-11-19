@@ -1101,12 +1101,13 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
 
             # construct data descriptors of current section
             for item_02 in section_ranges[i]:
-                dstdata: Elf_Data = libelf.elf_newdata(dstscn)
-                if not dstdata:
+                dstdata_pointer: POINTER(Elf_Data) = libelf.elf_newdata(dstscn)
+                if not dstdata_pointer:
                     print_error(
                         "Could not add data to section {0} of output file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
                     raise cu
 
+                dstdata = dstdata_pointer.contents
                 # alignment does not matter here because the position of the data range is controlled via d_off
                 dstdata.d_align = c_uint64(1)
                 dstdata.d_type = c_int(item_02.d_type)
