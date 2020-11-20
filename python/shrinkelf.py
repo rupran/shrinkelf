@@ -550,7 +550,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             if i == size - 1:
                 # insert after all sections
                 # untested
-                # FIXME: Alignment not given after NOBITS sections
+                # todo: Alignment not given after NOBITS sections
                 ret.phdr_start = phdr_start
                 ret.phdr_vaddr = phdr_vaddr
                 ret.phdr_entries = ret.list_entries
@@ -1090,7 +1090,6 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
                     libelf.elf_errmsg(-1)).decode()))
                 raise cu
 
-            # done: buffer bereitstellen
             # allocate buffers for the data of the output file
             for tmp_89 in section_ranges[i]:
                 tmp_89.buffer = create_string_buffer(tmp_89.size())
@@ -1133,9 +1132,6 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
                         # range ends before source data ends
                         srcend = item_01.end
 
-                    # done: Daten übertragen
-                    # memcpy(item_01.buffer + dststart, srcdata.d_buf + srcstart, srcend - srcstart)
-                    # done: srcdata.d_buf[srcstart] liefert Type bytes, das ist kein ctypes
                     memmove(addressof(item_01.buffer) + dststart, addressof(srcdata.d_buf.contents) + srcstart,
                             srcend - srcstart)
                     item_01.d_version = srcdata.d_version
@@ -1156,7 +1152,6 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
                 dstdata.d_align = c_uint64(1)
                 dstdata.d_type = c_int(item_02.d_type)
                 dstdata.d_version = c_uint(item_02.d_version)
-                # done: buffer in passenden Datentypen umwandeln
                 dstdata.d_buf = cast(item_02.buffer, POINTER(c_char))
                 dstdata.d_off = c_uint64(item_02.start + item_02.fragment_shift)
                 dstdata.d_size = c_uint64(item_02.end - item_02.start)
