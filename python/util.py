@@ -30,7 +30,7 @@ class FileFragment:
     memory_info: MemoryFragment
 
     def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0,
-                 buffer=None, d_type=0, d_version=0, memory_info=MemoryFragment()):
+                 buffer=None, d_type=0, d_version=0, memory_info=None):
         self.start = start
         self.end = end
         self.section_offset = section_offset
@@ -40,7 +40,10 @@ class FileFragment:
         self.buffer = buffer
         self.d_type = d_type
         self.d_version = d_version
-        self.memory_info = memory_info
+        if memory_info is None:
+            self.memory_info = MemoryFragment()
+        else:
+            self.memory_info = memory_info
 
     def size(self):
         return self.end - self.start
@@ -78,9 +81,13 @@ class LayoutDescription:
     segment_list: List[FragmentRange]
     list_entries: int
 
-    def __init__(self, list_entries: int = 0, segment_num: int = 0, segments: List[List[FragmentRange]] = None, segment_list: List[FragmentRange] = None, phdr_vaddr: int = 0,
+    def __init__(self, list_entries: int = 0, segment_num: int = 0, segments=None, segment_list=None, phdr_vaddr: int = 0,
                  phdr_start: int = 0,
                  phdr_entries: int = 0, shdr_start: int = 0):
+        if segment_list is None:
+            segment_list = []
+        if segments is None:
+            segments = []
         self.list_entries = list_entries
         self.segment_num = segment_num
         self.segments = segments
