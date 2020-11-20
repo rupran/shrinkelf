@@ -718,20 +718,20 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
                     current_fragment.end = ranges_27[r][1] - srcshdr.sh_offset
                 else:
                     # range under construction ends at the end of its containing section
-                    current_fragment.end = srcshdr.sh_size.value
+                    current_fragment.end = srcshdr.sh_size
 
-                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize.value != 0:
+                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
                     print_error(
                         "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.start % srcshdr.sh_entsize.value, current_fragment.start,
-                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset.value))
+                            i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
+                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
                     raise cu
 
-                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize.value != 0:
+                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
                     print_error(
                         "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.end % srcshdr.sh_entsize.value, current_fragment.end,
-                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset.value))
+                            i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
+                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
                     raise cu
 
             current_fragment.section_align = srcshdr.sh_addralign
@@ -751,7 +751,7 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
                     continue
 
                 offset_02: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
-                offset_segment: int = srcphdr.p_memsz.value if srcshdr.sh_type == SHT_NOBITS.value else srcphdr.p_filesz
+                offset_segment: int = srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS.value else srcphdr.p_filesz
                 if srcphdr.p_offset >= srcshdr.sh_offset + offset_02 or srcphdr.p_offset + offset_segment <= srcshdr.sh_offset:
                     # loadable segment but does not load this section
                     continue
@@ -803,15 +803,15 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
                 if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
                     print_error(
                         "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.start % srcshdr.sh_entsize.value, current_fragment.start,
-                            srcshdr.sh_entsize.value, current_fragment.start + srcshdr.sh_offset.value))
+                            i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
+                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
                     raise cu
 
                 if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
                     print_error(
                         "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.end % srcshdr.sh_entsize.value, current_fragment.end,
-                            srcshdr.sh_entsize.value, current_fragment.end + srcshdr.sh_offset.value))
+                            i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
+                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
                     raise cu
 
             current_fragment.section_align = srcshdr.sh_addralign
@@ -850,7 +850,7 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
                         current_fragment.memory_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
                     else:
                         # segment starts after section starts
-                        current_fragment.memory_info.start = srcphdr.p_offset.value - srcshdr.sh_offset.value
+                        current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
 
                     current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
 
@@ -883,7 +883,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
     # libelf-library won't work if you don't tell it the ELF version
-    if libelf.elf_version(EV_CURRENT) == EV_NONE:
+    if libelf.elf_version(EV_CURRENT) == EV_NONE.value:
         print_error("ELF library initialization failed: " + (libelf.elf_errmsg(-1)).decode())
         exit(1)
 

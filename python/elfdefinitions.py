@@ -2,7 +2,7 @@ from ctypes import *
 
 # FIXME: Doku
 # path to libelf library
-path_to_lib = "../libelf/libelf.so.1"
+path_to_lib = "/home/fabian/Dokumente/Uni/Master/Projekt/mp-shrink-elf/libelf/libelf.so.1"
 # FIXME: Doku
 # \brief Page size to align segment ranges
 PAGESIZE = 0x1000
