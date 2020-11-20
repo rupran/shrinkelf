@@ -169,8 +169,8 @@ def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
 # \return The new ::permutation
 def createPermutation(segments_01: List[List[FragmentRange]], index: int, current_size: int) -> Permutation:
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
-    ret.tmp = [] * ret.num_entries
-    ret.result = [] * ret.num_entries
+    ret.tmp = [0] * ret.num_entries
+    ret.result = [0] * ret.num_entries
 
     if current_size / PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) / PAGESIZE:
         # mark first element because it is on the same page as the previous section
