@@ -1770,7 +1770,7 @@ int main(int argc, char **argv) {
 					}
 				}
 			}
-fixed:
+
 			if (dstphdrs[i].p_type == PT_PHDR) {
 				/* fix up PHDR segment */
 				dstphdrs[i].p_vaddr = desc->phdr_vaddr;
