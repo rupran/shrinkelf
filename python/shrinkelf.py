@@ -172,7 +172,7 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
 
-    if current_size / PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) / PAGESIZE:
+    if current_size // PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) // PAGESIZE:
         # mark first element because it is on the same page as the previous section
         ret.tmp[0] = -1
         ret.result[0] = -1
@@ -180,7 +180,7 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     if index != len(segments_01) - 1:
         last = segments_01[index][-1]
         ahead = segments_01[index + 1][0]
-        if (last.offset + last.fsize) / PAGESIZE == (ahead.offset + ahead.fsize) / PAGESIZE:
+        if (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE:
             # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
