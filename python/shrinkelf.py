@@ -1223,8 +1223,10 @@ if __name__ == "__main__":
             exit(1)
         else:
             args.keep = []
-            for line in open(args.keep_file):
+            f = open(args.keep_file)
+            for line in f:
                 args.keep.append(line)
+            f.close()
 
     ranges: List[Tuple[int, int]] = []
     error = False
