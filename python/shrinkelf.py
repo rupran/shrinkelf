@@ -125,7 +125,7 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
                             flags=section[0].memory_info.flags, loadable=section[0].memory_info.loadable,
                             section_start=section_start)
     for i in range(1, len(section)):
-        if ((current.vaddr + current.msize) / PAGESIZE) == (section[i].memory_info.start / PAGESIZE):
+        if ((current.vaddr + current.msize) // PAGESIZE) == (section[i].memory_info.start // PAGESIZE):
             # data of tmp range will be loaded in the same page as content of current range => merge the ranges
             current.fsize = section[i].section_offset + section[i].end - current.offset
             current.msize = section[i].memory_info.end - current.vaddr
@@ -294,7 +294,7 @@ def recursive_permute(perm: Permutation, segments_04: List[FragmentRange], index
 # \param current_size The already occupied size in the output file
 def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_size: int):
     section_start = 0
-    for i in range(1, perm.num_entries):
+    for i in range(1, perm.num_entries + 1):
         if i == 1 and perm.result[0] == -1:
             # the first element of segments is constrained to the first position
             section_start = calculateOffset(segments_07[0].offset, current_size)
