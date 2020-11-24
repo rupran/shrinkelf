@@ -38,24 +38,17 @@ EI_NIDENT = 16
 EI_DATA = 5
 EI_OSABI = 7
 EI_ABIVERSION = 8
-
 EV_NONE = c_uint(0)
 EV_CURRENT = c_uint(1)
-
 ELF_C_READ = c_int(5)
 ELF_C_SET = c_int(6)
 ELF_C_WRITE = c_int(7)
-
 ELF_F_LAYOUT = c_uint(1)
-
 ELFCLASSNONE = c_int(0)
 ELFCLASS32 = c_int(1)
-
 SHT_NOBITS = c_int(8)
-
 PT_LOAD = c_uint32(1)
 PT_PHDR = c_uint32(6)
-
 PF_R = 0x4
 PF_X = 0x1
 
@@ -118,68 +111,45 @@ class Elf_Data(Structure):
 
 # FIXME: Doku
 libelf = cdll.LoadLibrary(path_to_lib)
-
-
 libelf.elf_version.argtypes = [c_uint]
 libelf.elf_version.restype = c_uint
-
 libelf.elf_errmsg.argtypes = [c_int]
 libelf.elf_errmsg.restype = c_char_p
-
 libelf.elf_flagelf.argtypes = [Elf_p, Elf_cmd, c_uint]
 libelf.elf_flagelf.restype = c_uint
-
 libelf.elf_fill.argtype = [c_int]
 libelf.elf_fill.restype = None
-
 libelf.elf_update.argtypes = [Elf_p, Elf_cmd]
 libelf.elf_update.restype = off_t
-
 libelf.elf_begin.argtypes = [c_int, Elf_cmd, Elf_p]
 libelf.elf_begin.restype = Elf_p
-
 libelf.elf_end.argtypes = [Elf_p]
 libelf.elf_end.restype = c_int
-
 libelf.elf_newscn.argtypes = [Elf_p]
 libelf.elf_newscn.restype = Elf_Scn_p
-
 libelf.elf_getscn.argtypes = [Elf_p, c_size_t]
 libelf.elf_getscn.restype = Elf_Scn_p
-
 libelf.elf_newdata.argtypes = [Elf_Scn_p]
 libelf.elf_newdata.restype = POINTER(Elf_Data)
-
 libelf.elf_getdata.argtypes = [Elf_Scn_p, POINTER(Elf_Data)]
 libelf.elf_getdata.restype = POINTER(Elf_Data)
-
 libelf.elf_getphdrnum.argtypes = [Elf_p, POINTER(c_size_t)]
 libelf.elf_getphdrnum.restype = c_int
-
 libelf.elf_getshdrnum.argtypes = [Elf_p, POINTER(c_size_t)]
 libelf.elf_getshdrnum.restype = c_int
-
-
 libelf.gelf_getclass.argtypes = [Elf_p]
 libelf.gelf_getclass.restype = c_int
-
 libelf.gelf_newehdr.argtypes = [Elf_p, c_int]
 libelf.gelf_newehdr.restype = POINTER(GElf_Ehdr)
-
 libelf.gelf_getehdr.argtypes = [Elf_p, POINTER(GElf_Ehdr)]
 libelf.gelf_getehdr.restype = POINTER(GElf_Ehdr)
-
 libelf.gelf_update_ehdr.argtypes = [Elf_p, POINTER(GElf_Ehdr)]
 libelf.gelf_update_ehdr.restype = c_int
-
 libelf.gelf_getshdr.argtypes = [Elf_Scn_p, POINTER(GElf_Shdr)]
 libelf.gelf_getshdr.restype = POINTER(GElf_Shdr)
-
 libelf.gelf_update_shdr.argtypes = [Elf_Scn_p, POINTER(GElf_Shdr)]
 libelf.gelf_update_shdr.restype = c_int
-
 libelf.gelf_newphdr.argtypes = [Elf_p, c_size_t]
 libelf.gelf_newphdr.restype = POINTER(GElf_Phdr)
-
 libelf.gelf_getphdr.argtypes = [Elf_p, c_int, POINTER(GElf_Phdr)]
 libelf.gelf_getphdr.restype = POINTER(GElf_Phdr)
