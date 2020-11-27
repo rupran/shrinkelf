@@ -7,3 +7,7 @@ test/*
 shrinkelf
 elfdiet
 
+python/Auswertung/*
+python/__pycache__/*
+python/dummy.*
+python/test*
