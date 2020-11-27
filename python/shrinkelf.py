@@ -3,7 +3,10 @@
 import argparse
 import os
 from sys import stderr
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict
+
+import gurobipy as gp
+from gurobipy import GRB
 
 from elfdefinitions import *
 from util import *
@@ -11,6 +14,8 @@ from util import *
 # FIXME: Doku
 # \brief File suffix for output file appended to the input file when no output file was specified
 FILESUFFIX: str = ".shrinked"
+PERMUTE_WITH_BRUTE_FORCE: str = "brute-force"
+PERMUTE_WITH_GUROBI: str = "gurobi"
 
 
 # FIXME: Doku
@@ -383,6 +388,99 @@ def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_e
     return phdr_start, phdr_vaddr, entry_size
 
 
+# Fixme: Doku
+def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last):
+    size = len(segments_37)
+    if size == 1:
+        # Fixme: Doku
+        # simply push the address ranges together
+        segments_37[0].shift = calculateOffset(segments_37[0].offset, current_size) - segments_37[0].offset
+        segments_37[0].section_start = calculateOffset(segments_37[0].section_start, current_size)
+        return calculateOffset(segments_37[0].offset, current_size) + segments_37[0].fsize
+    # todo: 2 fragmente, mindestens 1 fix
+    else:
+        s: Dict[Tuple[int, int], int] = {}
+        d: Dict[Tuple[int, int], int] = {}
+        for i in range(size):
+            a = segments_37[i]
+            a_start = a.end_regarding_section() % PAGESIZE
+            for j in range(size):
+                if i == j:
+                    continue
+                s[(j, i)] = a_start
+                b = segments_37[j]
+                b_add = ((b.start_regarding_file() % PAGESIZE) - (a.end_regarding_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
+                d[(i, j)] = b_add
+
+        try:
+            # todo: better names
+            m: gp.Model = gp.Model("Section-{0}".format(index))
+            x = m.addVars(d.keys(), obj=d, name="x", vtype=GRB.BINARY)
+            y = m.addVars(s.keys(), obj=s, name="y", vtype=GRB.BINARY)
+            m.setAttr("ModelSense", GRB.MINIMIZE)
+            m.addConstr(gp.quicksum(x), rhs=size-1, sense=GRB.EQUAL, name="frag")
+            m.addConstr(gp.quicksum(y), rhs=1, sense=GRB.EQUAL, name="ring")
+            m.addConstrs(((x.sum(j, '*') + y.sum(j, '*')) == 1 for j in range(size)), "out")
+            m.addConstrs(((x.sum('*', j) + y.sum('*', j)) == 1 for j in range(size)), "in")
+            if fix_first:
+                # keep first fragment of the section in its place because it will be loaded in the same page as the end of
+                # the previous section
+                m.addConstr(y.sum('*', 0) == 1, "fix_first_fragment")
+            if fix_last:
+                # keep last fragment of the section in its place because it will be loaded in the same page as the start of
+                # the next section
+                m.addConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
+            # xxx: debug
+            m.update()
+            if index == 8:
+                m.write("test{0}.mps".format(index))
+
+            # todo: terminalausgabe in log-file umbiegen
+            m.optimize()
+
+            current_fragment_index: int = -1
+            last_fragment_index: int = -1
+            for key in y:
+                if y[key].getAttr("x") == 1:
+                    last_fragment_index = key[0]
+                    current_fragment_index = key[1]
+                    break
+            assert current_fragment_index >= 0, "current_fragment_index not set"
+            assert last_fragment_index >= 0, "last_fragment_index not set"
+            seq = [k for k, v in x.items() if v.X > 0.5]
+            sequence: List[int] = [current_fragment_index]
+            while len(sequence) < size:
+                sequence += [b for a, b in seq if a == sequence[-1]]
+            assert sequence[-1] == last_fragment_index, "does not include all fragments"
+            # xxx: debug
+            print(sequence)
+            current_fragment = segments_37[sequence[0]]
+            section_start = calculateOffset(current_fragment.offset, current_size)
+            for index in sequence:
+                current_fragment = segments_37[index]
+                current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
+                current_fragment.section_start = section_start
+                current_size = section_start + current_fragment.fsize
+        except Exception as e:
+            print("ups")
+            print(e)
+            raise e
+        return current_size
+
+
+# Fixme: Doku
+def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
+    for i in range(1, len(segments_36)):
+        fix_first = current_size // PAGESIZE == (segments_36[i][0].offset + segments_36[i][0].fsize) // PAGESIZE
+        fix_last = False
+        if i != len(segments_36) - 1:
+            last = segments_36[i][-1]
+            ahead = segments_36[i + 1][0]
+            fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
+        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last)
+    return current_size
+
+
 # FIXME: Doku
 # \brief Calculates the new file layout
 #
@@ -394,7 +492,7 @@ def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_e
 #
 # \return The [description of the file layout](@ref layoutDescription) of the output file
 def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int,
-                           permute_ranges: bool) -> LayoutDescription:
+                           permute_ranges: str) -> LayoutDescription:
     size = len(ranges_13)
     ret: LayoutDescription = LayoutDescription()
     ret.segment_num = size
@@ -412,10 +510,12 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         ret.segments[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
-    if permute_ranges:
+    if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
         current_size = permute(ret.segments, current_size)
         if current_size == 0:
             raise cu
+    elif permute_ranges == PERMUTE_WITH_GUROBI:
+        current_size = solve_with_gurobi(ret.segments, current_size)
     else:
         # simply push the address ranges together
         for i in range(1, size):
@@ -1099,7 +1199,8 @@ if __name__ == "__main__":
     parser.add_argument("-k", "--keep", metavar="RANGE", action='append',
                         help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
     parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
-    parser.add_argument("-p", "--permute", action='store_true',
+    # todo: fix help message, type, etc.
+    parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI],
                         help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()
