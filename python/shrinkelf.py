@@ -411,7 +411,6 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 b = segments_37[j]
                 b_add = ((b.start_regarding_file() % PAGESIZE) - (a.end_regarding_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
                 d[(i, j)] = b_add
-
         try:
             # todo: better names
             m: gp.Model = gp.Model("Section-{0}".format(index))
@@ -430,10 +429,6 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 # keep last fragment of the section in its place because it will be loaded in the same page as the start of
                 # the next section
                 m.addConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
-            # xxx: debug
-            m.update()
-            if index == 8:
-                m.write("test{0}.mps".format(index))
 
             # todo: terminalausgabe in log-file umbiegen
             m.optimize()
@@ -452,17 +447,14 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             while len(sequence) < size:
                 sequence += [b for a, b in seq if a == sequence[-1]]
             assert sequence[-1] == last_fragment_index, "does not include all fragments"
-            # xxx: debug
-            print(sequence)
             current_fragment = segments_37[sequence[0]]
             section_start = calculateOffset(current_fragment.offset, current_size)
-            for index in sequence:
-                current_fragment = segments_37[index]
+            for fragment in sequence:
+                current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
                 current_fragment.section_start = section_start
                 current_size = section_start + current_fragment.fsize
         except Exception as e:
-            print("ups")
             print(e)
             raise e
         return current_size
