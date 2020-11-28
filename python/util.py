@@ -3,13 +3,37 @@ from typing import List
 
 
 class MemoryFragment:
+    """
+    information about memory layout of the enclosing FileFragment
+
+    loadable -- flag if the fragment is part of a LOAD segment
+    flags -- flags of the containing segment
+    align -- alignment requirement of the containing segment
+    start -- start address of the enclosing FileFragment in memory
+    end -- end address (exclusive) of the enclosing FileFragment in memory
+    """
+
     loadable: bool
     flags: int
     align: int
-    start: int          # from
-    end: int            # to
+    start: int
+    end: int
 
     def __init__(self, start=0, end=0, align=0, flags=0, loadable=False):
+        """ Initialize self.
+
+        :param start: start address of the enclosing FileFragment in memory
+        :type start: int
+        :param end: end address (exclusive) of the enclosing FileFragment in memory
+        :type end: int
+        :param align: alignment requirement of the containing segment
+        :type align: int
+        :param flags: flags of the containing segment
+        :type flags: int
+        :param loadable: flag if the fragment is part of a LOAD segment
+        :type loadable: bool
+        """
+
         self.start = start
         self.end = end
         self.align = align
