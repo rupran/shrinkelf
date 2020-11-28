@@ -17,18 +17,23 @@ class MemoryFragment:
         self.loadable = loadable
 
 
+# Fixme: Doku
 class FileFragment:
+    # Fixme: Doku
     start: int                      # from
+    # Fixme: Doku
     end: int                        # to
     section_offset: int
     section_align: int
     section_shift: int
+    # Fixme: Doku
     fragment_shift: int             # data_shift
     buffer: Array
     d_type: int
     d_version: int
     memory_info: MemoryFragment
 
+    # Fixme: Doku
     def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0,
                  buffer=None, d_type=0, d_version=0, memory_info=None):
         self.start = start
@@ -45,10 +50,12 @@ class FileFragment:
         else:
             self.memory_info = memory_info
 
+    # Fixme: Doku
     def size(self):
         return self.end - self.start
 
 
+# Fixme: Doku
 class FragmentRange:
     offset: int
     fsize: int
@@ -59,6 +66,7 @@ class FragmentRange:
     loadable: bool
     section_start: int
 
+    # Fixme: Doku
     def __init__(self, loadable: bool = False, flags: int = 0, fsize: int = 0, msize: int = 0, offset: int = 0,
                  vaddr: int = 0, shift: int = 0, section_start: int = 0):
         self.loadable = loadable
@@ -70,16 +78,20 @@ class FragmentRange:
         self.shift = shift
         self.section_start = section_start
 
+    # Fixme: Doku
     def end_regarding_section(self):
         return self.offset + self.fsize
 
+    # Fixme: Doku
     def start_regarding_file(self):
         return self.section_start + self.offset
 
+    # Fixme: Doku
     def end_regarding_file(self):
         return self.start_regarding_file() + self.fsize
 
 
+# Fixme: Doku
 class LayoutDescription:
     phdr_start: int
     phdr_vaddr: int
@@ -90,6 +102,7 @@ class LayoutDescription:
     segment_list: List[FragmentRange]
     list_entries: int
 
+    # Fixme: Doku
     def __init__(self, list_entries: int = 0, segment_num: int = 0, segments=None, segment_list=None, phdr_vaddr: int = 0,
                  phdr_start: int = 0,
                  phdr_entries: int = 0, shdr_start: int = 0):
@@ -106,6 +119,7 @@ class LayoutDescription:
         self.phdr_entries = phdr_entries
         self.shdr_start = shdr_start
 
+    # Fixme: Doku
     def sorted_loadable_segments(self) -> List[FragmentRange]:
         ret: List[FragmentRange] = []
         for elem in self.segment_list:
@@ -116,12 +130,14 @@ class LayoutDescription:
         return ret
 
 
+# Fixme: Doku
 class Permutation:
     tmp: List[int]
     result: List[int]
     num_entries: int
     size: int
 
+    # Fixme: Doku
     def __init__(self, result=None, size=0, num_entries=0, tmp=None):
         self.result = result
         self.size = size
