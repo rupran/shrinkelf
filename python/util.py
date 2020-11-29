@@ -125,8 +125,27 @@ class FileFragment:
         return self.end - self.start
 
 
-# Fixme: Doku
 class FragmentRange:
+    """
+    block of file fragments that can be permuted
+
+    Range in file that can be rearranged to save space. Rearranged means that ordering of ranges in the input file may
+    not be preserved. The range can span over multiple file fragment and the room between them.  A side effect of this
+    is that there need not be data behind every address in this range.
+    Fragment ranges are constructed in such a way that file fragments which are loaded in the same page reside in the
+    same fragment range. The rational behind this is to derive the LOAD segments of the new file from the fragment
+    ranges.
+
+    offset -- offset of the range in the input file
+    fsize -- size of the range in the file representation
+    vaddr -- start address of the range in memory
+    msize -- size of the range in memory
+    flags -- flags of the containing LOAD segment
+    shift -- Shift of the range in the new file. Negative values mean a shift towards the beginning of the file
+    loadable -- flag if the range is part of a LOAD segment
+    section_start -- offset of the containing section in the new file
+    """
+
     offset: int
     fsize: int
     vaddr: int
@@ -136,9 +155,28 @@ class FragmentRange:
     loadable: bool
     section_start: int
 
-    # Fixme: Doku
     def __init__(self, loadable: bool = False, flags: int = 0, fsize: int = 0, msize: int = 0, offset: int = 0,
                  vaddr: int = 0, shift: int = 0, section_start: int = 0):
+        """ Initialize self.
+
+        :param loadable: flag if the range is part of a LOAD segment
+        :type loadable: bool
+        :param flags: flags of the containing LOAD segment
+        :type flags: int
+        :param fsize: size of the range in the file representation
+        :type fsize: int
+        :param msize: size of the range in memory
+        :type msize: int
+        :param offset: offset of the range in the input file
+        :type offset: int
+        :param vaddr: start address of the range in memory
+        :type vaddr: int
+        :param shift: Shift of the range in the new file. Negative values mean a shift towards the beginning of the file
+        :type shift: int
+        :param section_start: offset of the containing section in the new file
+        :type section_start: int
+        """
+
         self.loadable = loadable
         self.flags = flags
         self.fsize = fsize
@@ -148,12 +186,14 @@ class FragmentRange:
         self.shift = shift
         self.section_start = section_start
 
-    # Fixme: Doku
     def end_in_section(self):
+        """ Return end address of range relative to the start address of the containing section. """
+
         return self.offset + self.fsize - self.section_start
 
-    # Fixme: Doku
     def end_in_file(self):
+        """ Return end address of range relative to the start of the file. """
+
         return self.offset + self.fsize
 
 
