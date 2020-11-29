@@ -403,13 +403,13 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         d: Dict[Tuple[int, int], int] = {}
         for i in range(size):
             a = segments_37[i]
-            a_start = a.end_regarding_section() % PAGESIZE
+            a_start = a.end_in_section() % PAGESIZE
             for j in range(size):
                 if i == j:
                     continue
                 s[(j, i)] = a_start
                 b = segments_37[j]
-                b_add = ((b.start_regarding_file() % PAGESIZE) - (a.end_regarding_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
+                b_add = ((b.offset % PAGESIZE) - (a.end_in_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
                 d[(i, j)] = b_add
         try:
             # todo: better names

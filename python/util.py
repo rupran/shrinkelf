@@ -70,14 +70,11 @@ class FragmentRange:
         self.shift = shift
         self.section_start = section_start
 
-    def end_regarding_section(self):
+    def end_in_section(self):
+        return self.offset + self.fsize - self.section_start
+
+    def end_in_file(self):
         return self.offset + self.fsize
-
-    def start_regarding_file(self):
-        return self.section_start + self.offset
-
-    def end_regarding_file(self):
-        return self.start_regarding_file() + self.fsize
 
 
 class LayoutDescription:
