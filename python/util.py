@@ -149,16 +149,12 @@ class FragmentRange:
         self.section_start = section_start
 
     # Fixme: Doku
-    def end_regarding_section(self):
+    def end_in_section(self):
+        return self.offset + self.fsize - self.section_start
+
+    # Fixme: Doku
+    def end_in_file(self):
         return self.offset + self.fsize
-
-    # Fixme: Doku
-    def start_regarding_file(self):
-        return self.section_start + self.offset
-
-    # Fixme: Doku
-    def end_regarding_file(self):
-        return self.start_regarding_file() + self.fsize
 
 
 # Fixme: Doku
