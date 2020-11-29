@@ -41,25 +41,66 @@ class MemoryFragment:
         self.loadable = loadable
 
 
-# Fixme: Doku
 class FileFragment:
-    # Fixme: Doku
-    start: int                      # from
-    # Fixme: Doku
-    end: int                        # to
+    """
+    file fragment to keep
+
+    A fragment of data that the user wants to keep. Addresses are relative to the start address of the containing
+    section and based on the file representation.
+
+    start -- start address of the file fragment relative to its containing section
+    end -- end address (exclusive) of the file fragment relative to its containing section
+    section_offset -- offset of the containing section in the file
+    section_align -- alignment requirement of the containing section
+    section_shift -- Shift of the containing section in the file. Negative values mean a shift towards the beginning of
+                     the file
+    fragment_shift -- Shift of the file fragment in its section. Negative values mean a shift towards the beginning of
+                      the section
+    buffer -- buffer for the data described by this fragment
+    d_type -- value of corresponding member of Elf_Data struct from the libelf library
+    d_version -- value of corresponding member of Elf_Data struct from the libelf library
+    memory_info -- information regarding the memory layout of this fragment
+    """
+
+    start: int
+    end: int
     section_offset: int
     section_align: int
     section_shift: int
-    # Fixme: Doku
-    fragment_shift: int             # data_shift
+    fragment_shift: int
     buffer: Array
     d_type: int
     d_version: int
     memory_info: MemoryFragment
 
-    # Fixme: Doku
     def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0,
                  buffer=None, d_type=0, d_version=0, memory_info=None):
+        """ Initialize self.
+
+        :param start: start address of the file fragment relative to its containing section
+        :type start: int
+        :param end: end address (exclusive) of the file fragment relative to its containing section
+        :type end: int
+        :param section_offset: offset of the containing section in the file
+        :type section_offset: int
+        :param section_align: alignment requirement of the containing section
+        :type section_align: int
+        :param section_shift: Shift of the containing section in the file. Negative values mean a shift towards the
+                              beginning of the file
+        :type section_shift: int
+        :param fragment_shift: Shift of the file fragment in its section. Negative values mean a shift towards the
+                               beginning of the section
+        :type fragment_shift: int
+        :param buffer: buffer for the data described by this fragment
+        :type buffer: ctypes.Array[char]
+        :param d_type: value of corresponding member of Elf_Data struct from the libelf library
+        :type d_type: int
+        :param d_version: value of corresponding member of Elf_Data struct from the libelf library
+        :type d_version: int
+        :param memory_info: information regarding the memory layout of this fragment
+        :type memory_info: MemoryFragment
+        """
+
         self.start = start
         self.end = end
         self.section_offset = section_offset
@@ -74,8 +115,13 @@ class FileFragment:
         else:
             self.memory_info = memory_info
 
-    # Fixme: Doku
     def size(self):
+        """ Return size of fragment.
+
+        :return: size of the fragment
+        :rtype: int
+        """
+
         return self.end - self.start
 
 
