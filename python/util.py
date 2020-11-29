@@ -117,11 +117,7 @@ class FileFragment:
             self.memory_info = memory_info
 
     def size(self) -> int:
-        """ Return size of fragment.
-
-        :return: size of the fragment
-        :rtype: int
-        """
+        """ Return size of fragment. """
 
         return self.end - self.start
 
@@ -262,7 +258,6 @@ class LayoutDescription:
         for elem in self.segment_list:
             if elem.loadable:
                 ret.append(elem)
-
         ret.sort(key=lambda item: item.vaddr)
         return ret
 
