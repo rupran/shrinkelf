@@ -19,7 +19,7 @@ class MemoryFragment:
     start: int
     end: int
 
-    def __init__(self, start=0, end=0, align=0, flags=0, loadable=False):
+    def __init__(self, start: int = 0, end: int = 0, align: int = 0, flags: int = 0, loadable: bool = False) -> None:
         """ Initialize self.
 
         :param start: start address of the enclosing FileFragment in memory
@@ -73,8 +73,9 @@ class FileFragment:
     d_version: int
     memory_info: MemoryFragment
 
-    def __init__(self, start=0, end=0, section_offset=0, section_align=0, section_shift=0, fragment_shift=0,
-                 buffer=None, d_type=0, d_version=0, memory_info=None):
+    def __init__(self, start: int = 0, end: int = 0, section_offset: int = 0, section_align: int = 0,
+                 section_shift: int = 0, fragment_shift: int = 0, buffer: Array = None, d_type: int = 0,
+                 d_version: int = 0, memory_info: MemoryFragment = None) -> None:
         """ Initialize self.
 
         :param start: start address of the file fragment relative to its containing section
@@ -115,7 +116,7 @@ class FileFragment:
         else:
             self.memory_info = memory_info
 
-    def size(self):
+    def size(self) -> int:
         """ Return size of fragment.
 
         :return: size of the fragment
@@ -156,7 +157,7 @@ class FragmentRange:
     section_start: int
 
     def __init__(self, loadable: bool = False, flags: int = 0, fsize: int = 0, msize: int = 0, offset: int = 0,
-                 vaddr: int = 0, shift: int = 0, section_start: int = 0):
+                 vaddr: int = 0, shift: int = 0, section_start: int = 0) -> None:
         """ Initialize self.
 
         :param loadable: flag if the range is part of a LOAD segment
@@ -186,12 +187,12 @@ class FragmentRange:
         self.shift = shift
         self.section_start = section_start
 
-    def end_in_section(self):
+    def end_in_section(self) -> int:
         """ Return end address of range relative to the start address of the containing section. """
 
         return self.offset + self.fsize - self.section_start
 
-    def end_in_file(self):
+    def end_in_file(self) -> int:
         """ Return end address of range relative to the start of the file. """
 
         return self.offset + self.fsize
@@ -218,9 +219,9 @@ class LayoutDescription:
     list_entries: int
 
     # Fixme: Doku
-    def __init__(self, list_entries: int = 0, segment_num: int = 0, segments=None, segment_list=None, phdr_vaddr: int = 0,
-                 phdr_start: int = 0,
-                 phdr_entries: int = 0, shdr_start: int = 0):
+    def __init__(self, list_entries: int = 0, segment_num: int = 0, segments: List[List[FragmentRange]] = None,
+                 segment_list: List[FragmentRange] = None, phdr_vaddr: int = 0, phdr_start: int = 0,
+                 phdr_entries: int = 0, shdr_start: int = 0) -> None:
         """ Initialize self.
 
         :param list_entries:
@@ -281,7 +282,7 @@ class Permutation:
     num_entries: int
     size: int
 
-    def __init__(self, result=None, size=0, num_entries=0, tmp=None):
+    def __init__(self, result: List[int] = None, size: int = 0, num_entries: int = 0, tmp: List[int] = None) -> None:
         """ Initialize self.
 
         :param result: array of indexes, describing the current optimum
