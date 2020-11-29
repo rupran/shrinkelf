@@ -266,15 +266,33 @@ class LayoutDescription:
         return ret
 
 
-# Fixme: Doku
 class Permutation:
+    """
+    permutation of fragment ranges
+
+    tmp -- array of indexes, describing the current permutation
+    result -- array of indexes, describing the current optimum
+    num_entries -- size of the arrays
+    size -- size of the fragment ranges in ordering of the current optimum
+    """
+
     tmp: List[int]
     result: List[int]
     num_entries: int
     size: int
 
-    # Fixme: Doku
     def __init__(self, result=None, size=0, num_entries=0, tmp=None):
+        """ Initialize self.
+
+        :param result: array of indexes, describing the current optimum
+        :type result: List[int]
+        :param size: size of the fragment ranges in ordering of the current optimum
+        :type size: int
+        :param num_entries: size of the arrays
+        :type num_entries: int
+        :param tmp: array of indexes, describing the current permutation
+        :type tmp: List[int]
+        """
         self.result = result
         self.size = size
         self.tmp = tmp
