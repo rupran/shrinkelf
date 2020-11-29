@@ -199,6 +199,15 @@ class FragmentRange:
 
 # Fixme: Doku
 class LayoutDescription:
+    """
+    description of the new file layout
+
+    phdr_start -- offset of PHDR table in new file
+    phdr_vaddr -- offset of PHDR table in memory after shrinking the original ELF file
+    phdr_entries -- number of entries in new PHDR table
+    shdr_start -- offset of SHDR table in new file
+    """
+
     phdr_start: int
     phdr_vaddr: int
     phdr_entries: int
@@ -212,6 +221,26 @@ class LayoutDescription:
     def __init__(self, list_entries: int = 0, segment_num: int = 0, segments=None, segment_list=None, phdr_vaddr: int = 0,
                  phdr_start: int = 0,
                  phdr_entries: int = 0, shdr_start: int = 0):
+        """ Initialize self.
+
+        :param list_entries:
+        :type list_entries:
+        :param segment_num:
+        :type segment_num:
+        :param segments:
+        :type segments:
+        :param segment_list:
+        :type segment_list:
+        :param phdr_vaddr: offset of PHDR table in memory after shrinking the original ELF file
+        :type phdr_vaddr: int
+        :param phdr_start: offset of PHDR table in new file
+        :type phdr_start: int
+        :param phdr_entries: number of entries in new PHDR table
+        :type phdr_entries: int
+        :param shdr_start: offset of SHDR table in new file
+        :type shdr_start: int
+        """
+
         if segment_list is None:
             segment_list = []
         if segments is None:
@@ -225,8 +254,9 @@ class LayoutDescription:
         self.phdr_entries = phdr_entries
         self.shdr_start = shdr_start
 
-    # Fixme: Doku
     def sorted_loadable_segments(self) -> List[FragmentRange]:
+        """ Return a list of the loadable fragment ranges (which will provide the data for the new LOAD segments). """
+
         ret: List[FragmentRange] = []
         for elem in self.segment_list:
             if elem.loadable:
