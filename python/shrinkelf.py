@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Dict
 
 import gurobipy as gp
 from gurobipy import GRB
+import z3
 
 from elfdefinitions import *
 from util import *
@@ -16,6 +17,7 @@ from util import *
 FILESUFFIX: str = ".shrinked"
 PERMUTE_WITH_BRUTE_FORCE: str = "brute-force"
 PERMUTE_WITH_GUROBI: str = "gurobi"
+PERMUTE_WITH_Z3: str = "z3"
 
 
 # FIXME: Doku
@@ -473,6 +475,85 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
     return current_size
 
 
+# Fixme: Doku
+def solve_smt_instance(section: List[FragmentRange], current_size: int, index: int, fix_first: bool, fix_last: bool) -> int:
+    size = len(section)
+    if size == 1:
+        # Fixme: Doku
+        # simply push the address ranges together
+        section[0].shift = calculateOffset(section[0].offset, current_size) - section[0].offset
+        section[0].section_start = calculateOffset(section[0].section_start, current_size)
+        return calculateOffset(section[0].offset, current_size) + section[0].fsize
+    else:
+        smt_constants = []
+        for fragment in section:
+            smt_constants.append(fragment.get_smt_constants())
+        p = z3.IntVector("p", len(section))
+        end_13 = z3.Int("end")
+        start_13 = z3.Int("start")
+        optimizer = z3.Optimize()
+        end_terms = []
+        start_terms = []
+        # constraints
+        for i in range(len(section)):
+            # fragments can't overlap
+            for j in range(len(section)):
+                if i == j:
+                    continue
+                optimizer.add(z3.Or(p[j] * PAGESIZE + smt_constants[j][0] + smt_constants[j][1] <= p[i] * PAGESIZE + smt_constants[i][0],
+                                    p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= p[j] * PAGESIZE + smt_constants[j][0]
+                                    ))
+            # fragments can only be placed after the current end of file
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= current_size)
+            # variable "end" shall point after all fragments
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= end_13)
+            # variable "end" shall point at the end of the last fragment
+            end_terms.append(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] == end_13)
+            # variable "start" shall point before all fragments
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= start_13)
+            # variable "start" shall point at the start of the first fragment
+            start_terms.append(p[i] * PAGESIZE + smt_constants[i][0] == start_13)
+        optimizer.add(z3.Or(end_terms))
+        optimizer.add(z3.Or(start_terms))
+        # constraints for first range
+        if fix_first:
+            if current_size % PAGESIZE > smt_constants[0][0]:
+                # first fragment is in the page after the current end of the file
+                optimizer.add(p[0] - 1 == current_size // PAGESIZE)
+            else:
+                # first fragment is in the same page as the current end of the file
+                optimizer.add(p[0] == current_size // PAGESIZE)
+        # constraints for last range
+        if fix_last:
+            # last range must come last in file
+            for i in range(len(section) - 1):
+                optimizer.add(p[-1] >= p[i])
+        # minimize end of this section
+        optimizer.minimize(end_13)
+        res = optimizer.check()
+        if res != z3.sat:
+            print_error("Z3 could not find a solution for section {0}".format(index))
+            raise cu
+        model = optimizer.model()
+        for i in range(len(section)):
+            section[i].section_start = model[start_13].as_long()
+            section[i].shift = (model.eval(p[i] * PAGESIZE + smt_constants[i][0])).as_long() - section[i].offset
+        return model[end_13].as_long()
+
+
+# Fixme: Doku
+def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> int:
+    for i in range(1, len(segments_13)):
+        fix_first = current_size // PAGESIZE == (segments_13[i][0].offset + segments_13[i][0].fsize) // PAGESIZE
+        fix_last = False
+        if i != len(segments_13) - 1:
+            last = segments_13[i][-1]
+            ahead = segments_13[i + 1][0]
+            fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
+        current_size = solve_smt_instance(segments_13[i], current_size, i, fix_first, fix_last)
+    return current_size
+
+
 # FIXME: Doku
 # \brief Calculates the new file layout
 #
@@ -502,12 +583,15 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         ret.segments[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
+    # todo: Bedingung für segment liegt in der selben page prüfen
     if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
         current_size = permute(ret.segments, current_size)
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
         current_size = solve_with_gurobi(ret.segments, current_size)
+    elif permute_ranges == PERMUTE_WITH_Z3:
+        current_size = solve_with_z3(ret.segments, current_size)
     else:
         # simply push the address ranges together
         for i in range(1, size):
@@ -1192,7 +1276,7 @@ if __name__ == "__main__":
                         help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
     parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
     # todo: fix help message, type, etc.
-    parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI],
+    parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI, PERMUTE_WITH_Z3],
                         help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()

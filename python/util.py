@@ -1,6 +1,9 @@
 from ctypes import Array
 from typing import List
 
+# Fixme: Doku
+PAGESIZE = 0x1000
+
 
 class MemoryFragment:
     loadable: bool
@@ -75,6 +78,10 @@ class FragmentRange:
 
     def end_in_file(self):
         return self.offset + self.fsize
+
+    # Fixme: Doku
+    def get_smt_constants(self):
+        return self.offset % PAGESIZE, self.fsize
 
 
 class LayoutDescription:
