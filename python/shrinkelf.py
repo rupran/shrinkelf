@@ -993,13 +993,15 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
     # libelf-library won't work if you don't tell it the ELF version
     if libelf.elf_version(EV_CURRENT) == EV_NONE.value:
         print_error("ELF library initialization failed: " + (libelf.elf_errmsg(-1)).decode())
-        exit(1)
+        cu.exitstatus = 1
+        return
     # file descriptor of input file
     # todo: file not found error abfangen
     srcfd: int = os.open(args_01.file, os.O_RDONLY)
     if srcfd < 0:
         print_error("Could not open input file " + args_01.file)
-        exit(1)
+        cu.exitstatus = 1
+        return
     cu.level += 1
     try:
         # ELF representation of input file
@@ -1265,6 +1267,118 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             os.close(srcfd)
 
 
+def parse_args():
+    global args
+    # parse ranges to keep
+    if args.keep is None:
+        if args.keep_file is None:
+            print_error("No ranges specified. Aborting!")
+            cu.exitstatus = 1
+            return []
+        else:
+            args.keep = []
+            f = open(args.keep_file)
+            for line in f:
+                args.keep.append(line)
+            f.close()
+    ranges_123: List[Tuple[int, int]] = []
+    error = False
+    for item in args.keep:
+        # todo: item mit rstrip() formatieren
+        if ":" in item:
+            frag_desc = item.split(":")
+            if len(frag_desc) != 2:
+                print_error("Invalid range argument '" + item + "' - ignoring!")
+                error = True
+                continue
+            try:
+                start = int(frag_desc[0], base=0)
+            except ValueError:
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                error = True
+                continue
+            try:
+                length = int(frag_desc[1], base=0)
+            except ValueError:
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                error = True
+                continue
+            if start < 0:
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                error = True
+                continue
+            if length < 1:
+                print_error("LEN of " + item + "must be bigger than zero (is " + str(length) + ") - ignoring!")
+                error = True
+                continue
+            tmp = insertTuple((start, start + length), ranges_123)
+            if tmp is not None:
+                print_error(item + "overlaps with" + str(tmp))
+                error = True
+                continue
+        elif "-" in item:
+            frag_desc = item.split("-")
+            if len(frag_desc) != 2:
+                print_error("Invalid range argument '" + item + "' - ignoring!")
+                error = True
+                continue
+            try:
+                start = int(frag_desc[0], base=0)
+            except ValueError:
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                error = True
+                continue
+            try:
+                end = int(frag_desc[1], base=0)
+            except ValueError:
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                error = True
+                continue
+            if start < 0:
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                error = True
+                continue
+            if end <= start:
+                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(
+                    end) + ") - ignoring!")
+                error = True
+                continue
+            tmp = insertTuple((start, end), ranges_123)
+            if tmp is not None:
+                print_error(item + "overlaps with" + str(tmp))
+                error = True
+                continue
+        else:
+            print_error("Invalid range argument '{0}' - ignoring!".format(item))
+            error = True
+            continue
+    if len(ranges_123) == 0:
+        print_error("No valid ranges! Aborting")
+        cu.exitstatus = 1
+        return []
+    if error:
+        print_error("Errors during argument parsing detected. Abort...")
+        cu.exitstatus = 1
+        return []
+    # determine output file name
+    if args.output_file is not None:
+        # user specified output file name
+        if args.output_file == args.file:
+            print_error("Input and output file are the same! Aborting")
+            cu.exitstatus = 1
+            return []
+    else:
+        # generate own output file name
+        args.output_file = args.file + FILESUFFIX
+    return ranges_123
+
+
 # FIXME: Doku
 if __name__ == "__main__":
     # --------------------------------------------------------------------------- #
@@ -1281,104 +1395,7 @@ if __name__ == "__main__":
                         help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()
-    # parse ranges to keep
-    if args.keep is None:
-        if args.keep_file is None:
-            print_error("No ranges specified. Aborting!")
-            exit(1)
-        else:
-            args.keep = []
-            f = open(args.keep_file)
-            for line in f:
-                args.keep.append(line)
-            f.close()
-    ranges: List[Tuple[int, int]] = []
-    error = False
-    for item in args.keep:
-        # todo: item mit rstrip() formatieren
-        if ":" in item:
-            frag_desc = item.split(":")
-            if len(frag_desc) != 2:
-                print_error("Invalid range argument '" + item + "' - ignoring!")
-                error = True
-                continue
-            try:
-                start = int(frag_desc[0], base=0)
-            except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
-                error = True
-                continue
-            try:
-                length = int(frag_desc[1], base=0)
-            except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
-                error = True
-                continue
-            if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
-                error = True
-                continue
-            if length < 1:
-                print_error("LEN of " + item + "must be bigger than zero (is " + str(length) + ") - ignoring!")
-                error = True
-                continue
-            tmp = insertTuple((start, start + length), ranges)
-            if tmp is not None:
-                print_error(item + "overlaps with" + str(tmp))
-                error = True
-                continue
-        elif "-" in item:
-            frag_desc = item.split("-")
-            if len(frag_desc) != 2:
-                print_error("Invalid range argument '" + item + "' - ignoring!")
-                error = True
-                continue
-            try:
-                start = int(frag_desc[0], base=0)
-            except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
-                error = True
-                continue
-            try:
-                end = int(frag_desc[1], base=0)
-            except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
-                error = True
-                continue
-            if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
-                error = True
-                continue
-            if end <= start:
-                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(end) + ") - ignoring!")
-                error = True
-                continue
-            tmp = insertTuple((start, end), ranges)
-            if tmp is not None:
-                print_error(item + "overlaps with" + str(tmp))
-                error = True
-                continue
-        else:
-            print_error("Invalid range argument '{0}' - ignoring!".format(item))
-            error = True
-            continue
-    if len(ranges) == 0:
-        print_error("No valid ranges! Aborting")
-        exit(1)
-    if error:
-        decision = input("Errors during argument parsing detected. Abort? (Y/n): ")
-        while decision != "Y" and decision != "n":
-            decision = input("Please enter (Y/n): ")
-        if decision == "Y":
-            exit(1)
-    # determine output file name
-    if args.output_file is not None:
-        # user specified output file name
-        if args.output_file == args.file:
-            print_error("Input and output file are the same! Aborting")
-            exit(1)
-    else:
-        # generate own output file name
-        args.output_file = args.file + FILESUFFIX
-    shrinkelf(args, ranges)
+    ranges = parse_args()
+    if ranges:
+        shrinkelf(args, ranges)
     exit(cu.exitstatus)
