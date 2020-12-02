@@ -986,7 +986,7 @@ def calculateSectionSize(section: List[FileFragment]):
 
 
 # FIXME: Doku
-def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
+def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
     # --------------------------------------------------------------------------- #
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
@@ -997,9 +997,9 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         return
     # file descriptor of input file
     # todo: file not found error abfangen
-    srcfd: int = os.open(args_01.file, os.O_RDONLY)
+    srcfd: int = os.open(file, os.O_RDONLY)
     if srcfd < 0:
-        print_error("Could not open input file " + args_01.file)
+        print_error("Could not open input file " + file)
         cu.exitstatus = 1
         return
     cu.level += 1
@@ -1011,9 +1011,9 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             raise cu
         cu.level += 1
         # file descriptor of output file
-        dstfd: int = os.open(args_01.output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
+        dstfd: int = os.open(output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
         if dstfd < 0:
-            print_error("Could not open output file " + args_01.output_file)
+            print_error("Could not open output file " + output_file)
             raise cu
         cu.level += 1
         # ELF representation of output file
@@ -1082,8 +1082,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass,
-                                                         args_01.permute)
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01)
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
@@ -1267,23 +1266,22 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             os.close(srcfd)
 
 
-def parse_args():
-    global args
+def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[int, int]], str]]:
     # parse ranges to keep
-    if args.keep is None:
-        if args.keep_file is None:
+    if keep is None:
+        if keep_file is None:
             print_error("No ranges specified. Aborting!")
             cu.exitstatus = 1
-            return []
+            return None
         else:
-            args.keep = []
-            f = open(args.keep_file)
+            keep = []
+            f = open(keep_file)
             for line in f:
-                args.keep.append(line)
+                keep.append(line)
             f.close()
     ranges_123: List[Tuple[int, int]] = []
     error = False
-    for item in args.keep:
+    for item in keep:
         # todo: item mit rstrip() formatieren
         if ":" in item:
             frag_desc = item.split(":")
@@ -1361,22 +1359,22 @@ def parse_args():
     if len(ranges_123) == 0:
         print_error("No valid ranges! Aborting")
         cu.exitstatus = 1
-        return []
+        return None
     if error:
         print_error("Errors during argument parsing detected. Abort...")
         cu.exitstatus = 1
-        return []
+        return None
     # determine output file name
-    if args.output_file is not None:
+    if output_file is not None:
         # user specified output file name
-        if args.output_file == args.file:
+        if output_file == file:
             print_error("Input and output file are the same! Aborting")
             cu.exitstatus = 1
-            return []
+            return None
     else:
         # generate own output file name
-        args.output_file = args.file + FILESUFFIX
-    return ranges_123
+        output_file = file + FILESUFFIX
+    return ranges_123, output_file
 
 
 # FIXME: Doku
@@ -1395,7 +1393,7 @@ if __name__ == "__main__":
                         help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()
-    ranges = parse_args()
-    if ranges:
-        shrinkelf(args, ranges)
+    parsed = parse_args(args.keep, args.keep_file, args.file, args.output_file)
+    if parsed:
+        shrinkelf(parsed[0], args.file, parsed[1], args.permute)
     exit(cu.exitstatus)
