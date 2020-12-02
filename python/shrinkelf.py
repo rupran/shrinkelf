@@ -455,7 +455,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
                 current_fragment.section_start = section_start
-                current_size = section_start + current_fragment.fsize
+                current_size = current_fragment.offset + current_fragment.shift + current_fragment.fsize
         except Exception as e:
             print(e)
             raise e
@@ -995,6 +995,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         print_error("ELF library initialization failed: " + (libelf.elf_errmsg(-1)).decode())
         exit(1)
     # file descriptor of input file
+    # todo: file not found error abfangen
     srcfd: int = os.open(args_01.file, os.O_RDONLY)
     if srcfd < 0:
         print_error("Could not open input file " + args_01.file)
@@ -1294,6 +1295,7 @@ if __name__ == "__main__":
     ranges: List[Tuple[int, int]] = []
     error = False
     for item in args.keep:
+        # todo: item mit rstrip() formatieren
         if ":" in item:
             frag_desc = item.split(":")
             if len(frag_desc) != 2:
