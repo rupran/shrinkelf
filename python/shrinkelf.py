@@ -578,7 +578,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         if fix_last:
             # last range must come last in file
             for i in range(len(section) - 1):
-                optimizer.add(p[-1] >= p[i])
+                optimizer.add(p[-1] * PAGESIZE + smt_constants[-1][0] + smt_constants[-1][1]
+                              > p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1])
         # minimize end of this section
         optimizer.minimize(end_13)
         res = optimizer.check()
