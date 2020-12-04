@@ -391,6 +391,49 @@ def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_e
 
 
 # Fixme: Doku
+# Given a tuplelist of edges, find the shortest subtour
+def subtour(start, edges, size):
+    cycle = []
+    current_index = start[1]
+    for i in range(size):
+        neighbors = edges.select(current_index, '*')
+        current = neighbors[0]
+        cycle.append(current)
+        if current[1] == start[0]:
+            break
+        current_index = current[1]
+    return cycle
+
+
+# Fixme: Doku
+# Callback - use lazy constraints to eliminate sub-tours
+# noinspection PyProtectedMember
+def subtourelim(model, where):
+    if where == GRB.Callback.MIPSOL:
+        # make a list of edges selected in the solution
+        xvals = model.cbGetSolution(model._xvars)
+        selected = gp.tuplelist((i, j) for i, j in model._xvars.keys() if xvals[i, j] > 0.5)
+        yvals = model.cbGetSolution(model._yvars)
+        ring = gp.tuplelist((i, j) for i, j in model._yvars.keys() if yvals[i, j] > 0.5)
+        # find the shortest cycle in the selected edge list
+        tour: List[Tuple[int, int]] = subtour(ring[0], selected, model._size)
+        if len(tour) < model._size - 1:
+            # add subtour elimination constr. for every pair of cities in subtour
+            if len(tour) == 1:
+                model.cbLazy(model._xvars[tour[0][0], tour[0][1]] + model._yvars[ring[0][0], ring[0][1]] == 1)
+                # xxx: debug
+                # print_error("Added Constraint: x[{0}, {1}] + y[{2}, {3}] == 1".format(tour[0][0], tour[0][1], ring[0][0], ring[0][1]))
+            else:
+                model.cbLazy(gp.quicksum(model._xvars[i, j] for i, j in tour) + model._yvars[ring[0][0], ring[0][1]] <= len(tour))
+                # xxx: debug
+                # constr_str = ""
+                # for i, j in tour:
+                #     constr_str += "x[{0}, {1}] + ".format(i, j)
+                # constr_str += "y[{0}, {1}] <= {2}".format(ring[0][0], ring[0][1], len(tour))
+                # print_error("Added Constraint: " + constr_str)
+
+
+# Fixme: Doku
 def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last):
     size = len(segments_37)
     if size == 1:
@@ -432,13 +475,21 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 # the next section
                 m.addConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
 
+            m._xvars = x
+            m._yvars = y
+            m._size = size
+            m.Params.lazyConstraints = 1
             # todo: terminalausgabe in log-file umbiegen
-            m.optimize()
+            m.optimize(subtourelim)
+            # m.optimize()
+            if m.status != GRB.OPTIMAL:
+                print_error("Unable to solve smt instance for section " + str(index))
+                raise cu
 
             current_fragment_index: int = -1
             last_fragment_index: int = -1
             for key in y:
-                if y[key].getAttr("x") == 1:
+                if y[key].X > 0.5:
                     last_fragment_index = key[0]
                     current_fragment_index = key[1]
                     break
