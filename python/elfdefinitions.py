@@ -1,10 +1,8 @@
 from ctypes import *
 
-# FIXME: Doku
 # path to libelf library
-path_to_lib = "/home/fabian/Dokumente/Uni/Master/Projekt/mp-shrink-elf/libelf/libelf.so.1"
-# FIXME: Doku
-# \brief Page size to align segment ranges
+PATH_TO_LIB = "/home/fabian/Dokumente/Uni/Master/Projekt/mp-shrink-elf/libelf/libelf.so.1"
+# page size to align segment ranges
 PAGESIZE = 0x1000
 # FIXME: Doku
 # \brief Alignment for PHDR table in file (32bit version)
@@ -110,7 +108,7 @@ class Elf_Data(Structure):
 
 
 # FIXME: Doku
-libelf = cdll.LoadLibrary(path_to_lib)
+libelf = cdll.LoadLibrary(PATH_TO_LIB)
 libelf.elf_version.argtypes = [c_uint]
 libelf.elf_version.restype = c_uint
 libelf.elf_errmsg.argtypes = [c_int]
