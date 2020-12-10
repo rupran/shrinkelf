@@ -1264,6 +1264,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
                     item_01.d_type = srcdata.d_type
                 srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
             # construct data descriptors of current section
+            section_ranges[i].sort(key=lambda item: item.start + item.fragment_shift)
             for item_02 in section_ranges[i]:
                 dstdata_pointer: POINTER(Elf_Data) = libelf.elf_newdata(dstscn)
                 if not dstdata_pointer:
