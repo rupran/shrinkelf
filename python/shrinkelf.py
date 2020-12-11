@@ -168,14 +168,14 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
-    if current_size // PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) // PAGESIZE:
+    if current_size // PAGESIZE == segments_01[index][0].offset // PAGESIZE:
         # mark first element because it is on the same page as the previous section
         ret.tmp[0] = -1
         ret.result[0] = -1
     if index != len(segments_01) - 1:
         last = segments_01[index][-1]
         ahead = segments_01[index + 1][0]
-        if (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE:
+        if (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE:
             # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
@@ -509,12 +509,12 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 # Fixme: Doku
 def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name):
     for i in range(1, len(segments_36)):
-        fix_first = current_size // PAGESIZE == (segments_36[i][0].offset + segments_36[i][0].fsize) // PAGESIZE
+        fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_36) - 1:
             last = segments_36[i][-1]
             ahead = segments_36[i + 1][0]
-            fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
+            fix_last = (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE
         current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last, file_name)
     return current_size
 
@@ -589,12 +589,12 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
 # Fixme: Doku
 def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> int:
     for i in range(1, len(segments_13)):
-        fix_first = current_size // PAGESIZE == (segments_13[i][0].offset + segments_13[i][0].fsize) // PAGESIZE
+        fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_13) - 1:
             last = segments_13[i][-1]
             ahead = segments_13[i + 1][0]
-            fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
+            fix_last = (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE
         current_size = solve_smt_instance(segments_13[i], current_size, i, fix_first, fix_last)
     return current_size
 
@@ -664,7 +664,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
         # first file page with content from the tmp_112 range
         tmp_filepage = (tmp_112.offset + tmp_112.shift) // PAGESIZE
-        if current_page == tmp_page or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
+        if (current_page == tmp_page and current_filepage == tmp_filepage) or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
             # data of tmp_112 range will be loaded in the same or the following page as content of current range
             # => merge the ranges
             current_fragment.fsize = tmp_112.offset + tmp_112.shift + tmp_112.fsize - current_fragment.offset
@@ -693,7 +693,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
             # first file page with content from the tmp_113 range
             tmp_filepage = (tmp_113.offset + tmp_113.shift) // PAGESIZE
-            if current_page == tmp_page or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
+            if (current_page == tmp_page and current_filepage == tmp_filepage) or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
                 # data of tmp_113 range will be loaded in the same or the following page as content of current range
                 # => merge the ranges
                 current_fragment.fsize = tmp_113.offset + tmp_113.shift + tmp_113.fsize - current_fragment.offset
