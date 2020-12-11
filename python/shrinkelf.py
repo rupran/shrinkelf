@@ -421,16 +421,8 @@ def subtourelim(model, where):
             # add subtour elimination constr. for every pair of cities in subtour
             if len(tour) == 1:
                 model.cbLazy(model._xvars[tour[0][0], tour[0][1]] + model._yvars[ring[0][0], ring[0][1]] == 1)
-                # xxx: debug
-                # print_error("Added Constraint: x[{0}, {1}] + y[{2}, {3}] == 1".format(tour[0][0], tour[0][1], ring[0][0], ring[0][1]))
             else:
                 model.cbLazy(gp.quicksum(model._xvars[i, j] for i, j in tour) + model._yvars[ring[0][0], ring[0][1]] <= len(tour))
-                # xxx: debug
-                # constr_str = ""
-                # for i, j in tour:
-                #     constr_str += "x[{0}, {1}] + ".format(i, j)
-                # constr_str += "y[{0}, {1}] <= {2}".format(ring[0][0], ring[0][1], len(tour))
-                # print_error("Added Constraint: " + constr_str)
 
 
 # Fixme: Doku
