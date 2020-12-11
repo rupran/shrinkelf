@@ -439,9 +439,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
     if size == 1:
         # Fixme: Doku
         # simply push the address ranges together
-        segments_37[0].shift = calculateOffset(segments_37[0].offset, current_size) - segments_37[0].offset
-        segments_37[0].section_start = calculateOffset(segments_37[0].section_start, current_size)
-        return calculateOffset(segments_37[0].offset, current_size) + segments_37[0].fsize
+        segments_37[0].section_start = calculateOffset(segments_37[0].offset, current_size)
+        segments_37[0].shift = segments_37[0].section_start - segments_37[0].offset
+        return segments_37[0].section_start + segments_37[0].fsize
     # todo: 2 fragmente, mindestens 1 fix
     else:
         s: Dict[Tuple[int, int], int] = {}
@@ -532,9 +532,9 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
     if size == 1:
         # Fixme: Doku
         # simply push the address ranges together
-        section[0].shift = calculateOffset(section[0].offset, current_size) - section[0].offset
-        section[0].section_start = calculateOffset(section[0].section_start, current_size)
-        return calculateOffset(section[0].offset, current_size) + section[0].fsize
+        section[0].section_start = calculateOffset(section[0].offset, current_size)
+        section[0].shift = section[0].section_start - section[0].offset
+        return section[0].section_start + section[0].fsize
     else:
         smt_constants = []
         for fragment in section:
