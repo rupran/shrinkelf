@@ -426,7 +426,7 @@ def subtourelim(model, where):
 
 
 # Fixme: Doku
-def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last):
+def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last, file):
     size = len(segments_37)
     if size == 1:
         # Fixme: Doku
@@ -450,7 +450,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 d[(i, j)] = b_add
         try:
             # todo: better names
-            m: gp.Model = gp.Model("Section-{0}".format(index))
+            m: gp.Model = gp.Model("section-{0}".format(index))
+            # todo: program parameter whether to log or not
+            m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
             x = m.addVars(d.keys(), obj=d, name="x", vtype=GRB.BINARY)
             y = m.addVars(s.keys(), obj=s, name="y", vtype=GRB.BINARY)
             m.setAttr("ModelSense", GRB.MINIMIZE)
@@ -471,7 +473,6 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             m._yvars = y
             m._size = size
             m.Params.lazyConstraints = 1
-            # todo: terminalausgabe in log-file umbiegen
             m.optimize(subtourelim)
             # m.optimize()
             if m.status != GRB.OPTIMAL:
@@ -506,7 +507,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 
 
 # Fixme: Doku
-def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
+def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name):
     for i in range(1, len(segments_36)):
         fix_first = current_size // PAGESIZE == (segments_36[i][0].offset + segments_36[i][0].fsize) // PAGESIZE
         fix_last = False
@@ -514,7 +515,7 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
             last = segments_36[i][-1]
             ahead = segments_36[i + 1][0]
             fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
-        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last)
+        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last, file_name)
     return current_size
 
 
@@ -609,7 +610,7 @@ def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> 
 #
 # \return The [description of the file layout](@ref layoutDescription) of the output file
 def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int,
-                           permute_ranges: str) -> LayoutDescription:
+                           permute_ranges: str, file_name) -> LayoutDescription:
     size = len(ranges_13)
     ret: LayoutDescription = LayoutDescription()
     ret.segment_num = size
@@ -633,7 +634,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
-        current_size = solve_with_gurobi(ret.segments, current_size)
+        current_size = solve_with_gurobi(ret.segments, current_size, file_name)
     elif permute_ranges == PERMUTE_WITH_Z3:
         current_size = solve_with_z3(ret.segments, current_size)
     else:
@@ -1126,7 +1127,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01)
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file)
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
