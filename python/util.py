@@ -1,6 +1,9 @@
 from ctypes import Array
 from typing import List
 
+# Fixme: Doku
+PAGESIZE = 0x1000
+
 
 class MemoryFragment:
     """
@@ -192,6 +195,10 @@ class FragmentRange:
         """ Return end address of range relative to the start of the file. """
 
         return self.offset + self.fsize
+
+    # Fixme: Doku
+    def get_smt_constants(self):
+        return self.offset % PAGESIZE, self.fsize
 
 
 # Fixme: Doku

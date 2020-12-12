@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Dict
 
 import gurobipy as gp
 from gurobipy import GRB
+import z3
 
 from elfdefinitions import *
 from util import *
@@ -16,6 +17,7 @@ from util import *
 FILESUFFIX: str = ".shrinked"
 PERMUTE_WITH_BRUTE_FORCE: str = "brute-force"
 PERMUTE_WITH_GUROBI: str = "gurobi"
+PERMUTE_WITH_Z3: str = "z3"
 
 
 # FIXME: Doku
@@ -166,14 +168,14 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
-    if current_size // PAGESIZE == (segments_01[index][0].offset + segments_01[index][0].fsize) // PAGESIZE:
+    if current_size // PAGESIZE == segments_01[index][0].offset // PAGESIZE:
         # mark first element because it is on the same page as the previous section
         ret.tmp[0] = -1
         ret.result[0] = -1
     if index != len(segments_01) - 1:
         last = segments_01[index][-1]
         ahead = segments_01[index + 1][0]
-        if (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE:
+        if (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE:
             # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
@@ -389,14 +391,49 @@ def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_e
 
 
 # Fixme: Doku
-def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last):
+# Given a tuplelist of edges, find the shortest subtour
+def subtour(start, edges, size):
+    cycle = []
+    current_index = start[1]
+    for i in range(size):
+        neighbors = edges.select(current_index, '*')
+        current = neighbors[0]
+        cycle.append(current)
+        if current[1] == start[0]:
+            break
+        current_index = current[1]
+    return cycle
+
+
+# Fixme: Doku
+# Callback - use lazy constraints to eliminate sub-tours
+# noinspection PyProtectedMember
+def subtourelim(model, where):
+    if where == GRB.Callback.MIPSOL:
+        # make a list of edges selected in the solution
+        xvals = model.cbGetSolution(model._xvars)
+        selected = gp.tuplelist((i, j) for i, j in model._xvars.keys() if xvals[i, j] > 0.5)
+        yvals = model.cbGetSolution(model._yvars)
+        ring = gp.tuplelist((i, j) for i, j in model._yvars.keys() if yvals[i, j] > 0.5)
+        # find the shortest cycle in the selected edge list
+        tour: List[Tuple[int, int]] = subtour(ring[0], selected, model._size)
+        if len(tour) < model._size - 1:
+            # add subtour elimination constr. for every pair of cities in subtour
+            if len(tour) == 1:
+                model.cbLazy(model._xvars[tour[0][0], tour[0][1]] + model._yvars[ring[0][0], ring[0][1]] == 1)
+            else:
+                model.cbLazy(gp.quicksum(model._xvars[i, j] for i, j in tour) + model._yvars[ring[0][0], ring[0][1]] <= len(tour))
+
+
+# Fixme: Doku
+def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last, file):
     size = len(segments_37)
     if size == 1:
         # Fixme: Doku
         # simply push the address ranges together
-        segments_37[0].shift = calculateOffset(segments_37[0].offset, current_size) - segments_37[0].offset
-        segments_37[0].section_start = calculateOffset(segments_37[0].section_start, current_size)
-        return calculateOffset(segments_37[0].offset, current_size) + segments_37[0].fsize
+        segments_37[0].section_start = calculateOffset(segments_37[0].offset, current_size)
+        segments_37[0].shift = segments_37[0].section_start - segments_37[0].offset
+        return segments_37[0].section_start + segments_37[0].fsize
     # todo: 2 fragmente, mindestens 1 fix
     else:
         s: Dict[Tuple[int, int], int] = {}
@@ -413,7 +450,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 d[(i, j)] = b_add
         try:
             # todo: better names
-            m: gp.Model = gp.Model("Section-{0}".format(index))
+            m: gp.Model = gp.Model("section-{0}".format(index))
+            # todo: program parameter whether to log or not
+            m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
             x = m.addVars(d.keys(), obj=d, name="x", vtype=GRB.BINARY)
             y = m.addVars(s.keys(), obj=s, name="y", vtype=GRB.BINARY)
             m.setAttr("ModelSense", GRB.MINIMIZE)
@@ -430,13 +469,20 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 # the next section
                 m.addConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
 
-            # todo: terminalausgabe in log-file umbiegen
-            m.optimize()
+            m._xvars = x
+            m._yvars = y
+            m._size = size
+            m.Params.lazyConstraints = 1
+            m.optimize(subtourelim)
+            # m.optimize()
+            if m.status != GRB.OPTIMAL:
+                print_error("Unable to solve smt instance for section " + str(index))
+                raise cu
 
             current_fragment_index: int = -1
             last_fragment_index: int = -1
             for key in y:
-                if y[key].getAttr("x") == 1:
+                if y[key].X > 0.5:
                     last_fragment_index = key[0]
                     current_fragment_index = key[1]
                     break
@@ -453,7 +499,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
                 current_fragment.section_start = section_start
-                current_size = section_start + current_fragment.fsize
+                current_size = current_fragment.offset + current_fragment.shift + current_fragment.fsize
         except Exception as e:
             print(e)
             raise e
@@ -461,15 +507,95 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 
 
 # Fixme: Doku
-def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
+def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name):
     for i in range(1, len(segments_36)):
-        fix_first = current_size // PAGESIZE == (segments_36[i][0].offset + segments_36[i][0].fsize) // PAGESIZE
+        fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_36) - 1:
             last = segments_36[i][-1]
             ahead = segments_36[i + 1][0]
-            fix_last = (last.offset + last.fsize) // PAGESIZE == (ahead.offset + ahead.fsize) // PAGESIZE
-        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last)
+            fix_last = (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE
+        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last, file_name)
+    return current_size
+
+
+# Fixme: Doku
+def solve_smt_instance(section: List[FragmentRange], current_size: int, index: int, fix_first: bool, fix_last: bool) -> int:
+    size = len(section)
+    if size == 1:
+        # Fixme: Doku
+        # simply push the address ranges together
+        section[0].section_start = calculateOffset(section[0].offset, current_size)
+        section[0].shift = section[0].section_start - section[0].offset
+        return section[0].section_start + section[0].fsize
+    else:
+        smt_constants = []
+        for fragment in section:
+            smt_constants.append(fragment.get_smt_constants())
+        p = z3.IntVector("p", len(section))
+        end_13 = z3.Int("end")
+        start_13 = z3.Int("start")
+        optimizer = z3.Optimize()
+        end_terms = []
+        start_terms = []
+        # constraints
+        for i in range(len(section)):
+            # fragments can't overlap
+            for j in range(len(section)):
+                if i == j:
+                    continue
+                optimizer.add(z3.Or(p[j] * PAGESIZE + smt_constants[j][0] + smt_constants[j][1] <= p[i] * PAGESIZE + smt_constants[i][0],
+                                    p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= p[j] * PAGESIZE + smt_constants[j][0]
+                                    ))
+            # fragments can only be placed after the current end of file
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= current_size)
+            # variable "end" shall point after all fragments
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= end_13)
+            # variable "end" shall point at the end of the last fragment
+            end_terms.append(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] == end_13)
+            # variable "start" shall point before all fragments
+            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= start_13)
+            # variable "start" shall point at the start of the first fragment
+            start_terms.append(p[i] * PAGESIZE + smt_constants[i][0] == start_13)
+        optimizer.add(z3.Or(end_terms))
+        optimizer.add(z3.Or(start_terms))
+        # constraints for first range
+        if fix_first:
+            if current_size % PAGESIZE > smt_constants[0][0]:
+                # first fragment is in the page after the current end of the file
+                optimizer.add(p[0] - 1 == current_size // PAGESIZE)
+            else:
+                # first fragment is in the same page as the current end of the file
+                optimizer.add(p[0] == current_size // PAGESIZE)
+        # constraints for last range
+        if fix_last:
+            # last range must come last in file
+            for i in range(len(section) - 1):
+                optimizer.add(p[-1] * PAGESIZE + smt_constants[-1][0] + smt_constants[-1][1]
+                              > p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1])
+        # minimize end of this section
+        optimizer.minimize(end_13)
+        res = optimizer.check()
+        if res != z3.sat:
+            print_error("Z3 could not find a solution for section {0}".format(index))
+            raise cu
+        model = optimizer.model()
+        for i in range(len(section)):
+            section[i].section_start = model[start_13].as_long()
+            section[i].shift = (model.eval(p[i] * PAGESIZE + smt_constants[i][0])).as_long() - section[i].offset
+        return model[end_13].as_long()
+
+
+# Fixme: Doku
+def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> int:
+    for i in range(1, len(segments_13)):
+        fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
+        fix_last = False
+        if i != len(segments_13) - 1:
+            last = segments_13[i][-1]
+            ahead = segments_13[i + 1][0]
+            fix_last = (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE
+        current_size = solve_smt_instance(segments_13[i], current_size, i, fix_first, fix_last)
     return current_size
 
 
@@ -484,7 +610,7 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size):
 #
 # \return The [description of the file layout](@ref layoutDescription) of the output file
 def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int,
-                           permute_ranges: str) -> LayoutDescription:
+                           permute_ranges: str, file_name) -> LayoutDescription:
     size = len(ranges_13)
     ret: LayoutDescription = LayoutDescription()
     ret.segment_num = size
@@ -502,12 +628,15 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         ret.segments[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
+    # todo: Bedingung für segment liegt in der selben page prüfen
     if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
         current_size = permute(ret.segments, current_size)
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
-        current_size = solve_with_gurobi(ret.segments, current_size)
+        current_size = solve_with_gurobi(ret.segments, current_size, file_name)
+    elif permute_ranges == PERMUTE_WITH_Z3:
+        current_size = solve_with_z3(ret.segments, current_size)
     else:
         # simply push the address ranges together
         for i in range(1, size):
@@ -535,7 +664,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
         # first file page with content from the tmp_112 range
         tmp_filepage = (tmp_112.offset + tmp_112.shift) // PAGESIZE
-        if current_page == tmp_page or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
+        if (current_page == tmp_page and current_filepage == tmp_filepage) or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
             # data of tmp_112 range will be loaded in the same or the following page as content of current range
             # => merge the ranges
             current_fragment.fsize = tmp_112.offset + tmp_112.shift + tmp_112.fsize - current_fragment.offset
@@ -564,7 +693,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
             # first file page with content from the tmp_113 range
             tmp_filepage = (tmp_113.offset + tmp_113.shift) // PAGESIZE
-            if current_page == tmp_page or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
+            if (current_page == tmp_page and current_filepage == tmp_filepage) or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
                 # data of tmp_113 range will be loaded in the same or the following page as content of current range
                 # => merge the ranges
                 current_fragment.fsize = tmp_113.offset + tmp_113.shift + tmp_113.fsize - current_fragment.offset
@@ -902,19 +1031,22 @@ def calculateSectionSize(section: List[FileFragment]):
 
 
 # FIXME: Doku
-def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
+def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
     # --------------------------------------------------------------------------- #
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
     # libelf-library won't work if you don't tell it the ELF version
     if libelf.elf_version(EV_CURRENT) == EV_NONE.value:
         print_error("ELF library initialization failed: " + (libelf.elf_errmsg(-1)).decode())
-        exit(1)
+        cu.exitstatus = 1
+        return
     # file descriptor of input file
-    srcfd: int = os.open(args_01.file, os.O_RDONLY)
+    # todo: file not found error abfangen
+    srcfd: int = os.open(file, os.O_RDONLY)
     if srcfd < 0:
-        print_error("Could not open input file " + args_01.file)
-        exit(1)
+        print_error("Could not open input file " + file)
+        cu.exitstatus = 1
+        return
     cu.level += 1
     try:
         # ELF representation of input file
@@ -924,9 +1056,9 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             raise cu
         cu.level += 1
         # file descriptor of output file
-        dstfd: int = os.open(args_01.output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
+        dstfd: int = os.open(output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
         if dstfd < 0:
-            print_error("Could not open output file " + args_01.output_file)
+            print_error("Could not open output file " + output_file)
             raise cu
         cu.level += 1
         # ELF representation of output file
@@ -995,8 +1127,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass,
-                                                         args_01.permute)
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file)
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
@@ -1126,6 +1257,7 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
                     item_01.d_type = srcdata.d_type
                 srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
             # construct data descriptors of current section
+            section_ranges[i].sort(key=lambda item: item.start + item.fragment_shift)
             for item_02 in section_ranges[i]:
                 dstdata_pointer: POINTER(Elf_Data) = libelf.elf_newdata(dstscn)
                 if not dstdata_pointer:
@@ -1180,36 +1312,23 @@ def shrinkelf(args_01, ranges_34: List[Tuple[int, int]]):
             os.close(srcfd)
 
 
-# FIXME: Doku
-if __name__ == "__main__":
-    # --------------------------------------------------------------------------- #
-    #  Command line argument processing                                           #
-    # --------------------------------------------------------------------------- #
-    # noinspection PyTypeChecker
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument("file", help="the file, which should be shrunk")
-    parser.add_argument("-k", "--keep", metavar="RANGE", action='append',
-                        help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
-    parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
-    # todo: fix help message, type, etc.
-    parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI],
-                        help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
-    parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
-    args = parser.parse_args()
+def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[int, int]], str]]:
     # parse ranges to keep
-    if args.keep is None:
-        if args.keep_file is None:
+    if keep is None:
+        if keep_file is None:
             print_error("No ranges specified. Aborting!")
-            exit(1)
+            cu.exitstatus = 1
+            return None
         else:
-            args.keep = []
-            f = open(args.keep_file)
+            keep = []
+            f = open(keep_file)
             for line in f:
-                args.keep.append(line)
+                keep.append(line)
             f.close()
-    ranges: List[Tuple[int, int]] = []
+    ranges_123: List[Tuple[int, int]] = []
     error = False
-    for item in args.keep:
+    for item in keep:
+        # todo: item mit rstrip() formatieren
         if ":" in item:
             frag_desc = item.split(":")
             if len(frag_desc) != 2:
@@ -1219,24 +1338,27 @@ if __name__ == "__main__":
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
             try:
                 length = int(frag_desc[1], base=0)
             except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
             if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
                 error = True
                 continue
             if length < 1:
                 print_error("LEN of " + item + "must be bigger than zero (is " + str(length) + ") - ignoring!")
                 error = True
                 continue
-            tmp = insertTuple((start, start + length), ranges)
+            tmp = insertTuple((start, start + length), ranges_123)
             if tmp is not None:
                 print_error(item + "overlaps with" + str(tmp))
                 error = True
@@ -1250,24 +1372,28 @@ if __name__ == "__main__":
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error("First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
             try:
                 end = int(frag_desc[1], base=0)
             except ValueError:
-                print_error("Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                print_error(
+                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
                 error = True
                 continue
             if start < 0:
-                print_error("START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                print_error(
+                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
                 error = True
                 continue
             if end <= start:
-                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(end) + ") - ignoring!")
+                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(
+                    end) + ") - ignoring!")
                 error = True
                 continue
-            tmp = insertTuple((start, end), ranges)
+            tmp = insertTuple((start, end), ranges_123)
             if tmp is not None:
                 print_error(item + "overlaps with" + str(tmp))
                 error = True
@@ -1276,23 +1402,44 @@ if __name__ == "__main__":
             print_error("Invalid range argument '{0}' - ignoring!".format(item))
             error = True
             continue
-    if len(ranges) == 0:
+    if len(ranges_123) == 0:
         print_error("No valid ranges! Aborting")
-        exit(1)
+        cu.exitstatus = 1
+        return None
     if error:
-        decision = input("Errors during argument parsing detected. Abort? (Y/n): ")
-        while decision != "Y" and decision != "n":
-            decision = input("Please enter (Y/n): ")
-        if decision == "Y":
-            exit(1)
+        print_error("Errors during argument parsing detected. Abort...")
+        cu.exitstatus = 1
+        return None
     # determine output file name
-    if args.output_file is not None:
+    if output_file is not None:
         # user specified output file name
-        if args.output_file == args.file:
+        if output_file == file:
             print_error("Input and output file are the same! Aborting")
-            exit(1)
+            cu.exitstatus = 1
+            return None
     else:
         # generate own output file name
-        args.output_file = args.file + FILESUFFIX
-    shrinkelf(args, ranges)
+        output_file = file + FILESUFFIX
+    return ranges_123, output_file
+
+
+# FIXME: Doku
+if __name__ == "__main__":
+    # --------------------------------------------------------------------------- #
+    #  Command line argument processing                                           #
+    # --------------------------------------------------------------------------- #
+    # noinspection PyTypeChecker
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument("file", help="the file, which should be shrunk")
+    parser.add_argument("-k", "--keep", metavar="RANGE", action='append',
+                        help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
+    parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
+    # todo: fix help message, type, etc.
+    parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI, PERMUTE_WITH_Z3],
+                        help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
+    parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
+    args = parser.parse_args()
+    parsed = parse_args(args.keep, args.keep_file, args.file, args.output_file)
+    if parsed:
+        shrinkelf(parsed[0], args.file, parsed[1], args.permute)
     exit(cu.exitstatus)
