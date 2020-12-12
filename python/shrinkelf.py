@@ -376,17 +376,17 @@ def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[F
 # FIXME: Doku
 def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_ehdr: bool) -> Tuple[int, int, int]:
     if elfclass == ELFCLASS32:
-        realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf32_ehdr
-        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf32_ehdr
+        realfileoffset = fileoffset if not add_ehdr else fileoffset + SIZEOF_ELF32_EHDR
+        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + SIZEOF_ELF32_EHDR
         phdr_start = roundUp(realfileoffset, PHDR32ALIGN)
         phdr_vaddr = roundUp(realmemoryoffset, PHDR32ALIGN)
-        entry_size = sizeof_elf32_phdr
+        entry_size = SIZEOF_ELF32_PHDR
     else:
-        realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf64_ehdr
-        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf64_ehdr
+        realfileoffset = fileoffset if not add_ehdr else fileoffset + SIZEOF_ELF64_EHDR
+        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + SIZEOF_ELF64_EHDR
         phdr_start = roundUp(realfileoffset, PHDR64ALIGN)
         phdr_vaddr = roundUp(realmemoryoffset, PHDR64ALIGN)
-        entry_size = sizeof_elf64_phdr
+        entry_size = SIZEOF_ELF64_PHDR
     return phdr_start, phdr_vaddr, entry_size
 
 
@@ -619,9 +619,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     # Start with one for file header and one for PHDR table
     loads = 2
     if elfclass == ELFCLASS32:
-        current_size = sizeof_elf32_ehdr
+        current_size = SIZEOF_ELF32_EHDR
     else:
-        current_size = sizeof_elf64_ehdr
+        current_size = SIZEOF_ELF64_EHDR
     # ignore section 0
     for i in range(1, size):
         # determine the address ranges from the data ranges of a section
@@ -720,23 +720,23 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             # meaning inserting after file header)
             if i == 0:
                 if elfclass == ELFCLASS32:
-                    phdr_start = roundUp(sizeof_elf32_ehdr, PHDR32ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + sizeof_elf32_ehdr, PHDR32ALIGN)
-                    entry_size = sizeof_elf32_phdr
+                    phdr_start = roundUp(SIZEOF_ELF32_EHDR, PHDR32ALIGN)
+                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF32_EHDR, PHDR32ALIGN)
+                    entry_size = SIZEOF_ELF32_PHDR
                 else:
-                    phdr_start = roundUp(sizeof_elf64_ehdr, PHDR64ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + sizeof_elf64_ehdr, PHDR64ALIGN)
-                    entry_size = sizeof_elf64_phdr
+                    phdr_start = roundUp(SIZEOF_ELF64_EHDR, PHDR64ALIGN)
+                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF64_EHDR, PHDR64ALIGN)
+                    entry_size = SIZEOF_ELF64_PHDR
             else:
                 tmp_114 = ret.segments[i][-1]
                 if elfclass == ELFCLASS32:
                     phdr_start = roundUp(tmp_114.offset + tmp_114.fsize, PHDR32ALIGN)
                     phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR32ALIGN)
-                    entry_size = sizeof_elf32_phdr
+                    entry_size = SIZEOF_ELF32_PHDR
                 else:
                     phdr_start = roundUp(tmp_114.offset + tmp_114.fsize + tmp_114.shift, PHDR64ALIGN)
                     phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR64ALIGN)
-                    entry_size = sizeof_elf64_phdr
+                    entry_size = SIZEOF_ELF64_PHDR
             # check if PHDR table fits in the space in memory after section i
             if i == size - 1:
                 # insert after all sections
@@ -1187,9 +1187,9 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
                     dstphdrs[i].p_paddr = dstphdrs[i].p_vaddr
                     dstphdrs[i].p_offset = c_uint64(desc.phdr_start)
                     if elfclass == ELFCLASS32:
-                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf32_phdr)
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * SIZEOF_ELF32_PHDR)
                     else:
-                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf64_phdr)
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * SIZEOF_ELF64_PHDR)
                     dstphdrs[i].p_memsz = dstphdrs[i].p_filesz
         # --------------------------------------------------------------------------- #
         # Copy sections and section headers                                           #

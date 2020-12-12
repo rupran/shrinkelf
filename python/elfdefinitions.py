@@ -4,33 +4,34 @@ from ctypes import *
 PATH_TO_LIB = "/home/fabian/Dokumente/Uni/Master/Projekt/mp-shrink-elf/libelf/libelf.so.1"
 # page size to align segment ranges
 PAGESIZE = 0x1000
-# FIXME: Doku
-# \brief Alignment for PHDR table in file (32bit version)
+# alignment for PHDR table in file (32bit version)
 PHDR32ALIGN = 8
-# FIXME: Doku
-# \brief Alignment for PHDR table in file (64bit version)
+# alignment for PHDR table in file (64bit version)
 PHDR64ALIGN = 8
-# FIXME: Doku
-# \brief Alignment for SHDR table in file (32bit version)
+# alignment for SHDR table in file (32bit version)
 SHDR32ALIGN = 8
-# FIXME: Doku
-# \brief Alignment for SHDR table in file (64bit version)
+# alignment for SHDR table in file (64bit version)
 SHDR64ALIGN = 8
 
-# FIXME: Doku
+# define a type that is a pointer to the Elf structure used by libelf
 Elf_p = c_void_p
+# define a type for the Elf_cmd enumeration type used by libelf
 Elf_cmd = c_int
+# define a type that is a pointer to the Elf section structure used by libelf
 Elf_Scn_p = c_void_p
+# define a type for the off_t type used by libelf
 off_t = c_uint64
 
-# FIXME: Doku
-sizeof_elf32_ehdr = 56
-sizeof_elf64_ehdr = 64
-sizeof_elf32_phdr = 32
-sizeof_elf64_phdr = 56
+# size of an Elf32 EHDR
+SIZEOF_ELF32_EHDR = 56
+# size of an Elf64 EHDR
+SIZEOF_ELF64_EHDR = 64
+# size of an Elf32 PHDR
+SIZEOF_ELF32_PHDR = 32
+# size of an Elf64 PHDR
+SIZEOF_ELF64_PHDR = 56
 
 
-# FIXME: Doku
 # (Macro-)Constants from libelf
 EI_NIDENT = 16
 EI_DATA = 5
@@ -51,7 +52,6 @@ PF_R = 0x4
 PF_X = 0x1
 
 
-# FIXME: Doku
 # /* 64 bit EHDR. */
 class GElf_Ehdr(Structure):
     _fields_ = [("e_ident", c_ubyte * EI_NIDENT),    # unsigned char   e_ident[EI_NIDENT]; /* ELF identification. */
@@ -71,7 +71,6 @@ class GElf_Ehdr(Structure):
                 ]
 
 
-# FIXME: Doku
 # /* 64 bit SHDR */
 class GElf_Shdr(Structure):
     _fields_ = [("sh_name", c_uint32),          # Elf64_Word    sh_name;      /* index of section name */
@@ -87,7 +86,6 @@ class GElf_Shdr(Structure):
                 ]
 
 
-# FIXME: Doku
 # /* 64 bit PHDR entry. */
 class GElf_Phdr(Structure):
     _fields_ = [("p_type", c_uint32),           # Elf64_Word    p_type;      /* Type of segment. */
@@ -101,14 +99,14 @@ class GElf_Phdr(Structure):
                 ]
 
 
-# FIXME: Doku
 class Elf_Data(Structure):
     _fields_ = [("d_align", c_uint64), ("d_buf", POINTER(c_char)), ("d_off", c_uint64), ("d_size", c_uint64),
                 ("d_type", c_int), ("d_version", c_uint)]
 
 
-# FIXME: Doku
+# load libelf
 libelf = cdll.LoadLibrary(PATH_TO_LIB)
+# prototypes of used libelf functions
 libelf.elf_version.argtypes = [c_uint]
 libelf.elf_version.restype = c_uint
 libelf.elf_errmsg.argtypes = [c_int]
