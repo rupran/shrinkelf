@@ -434,7 +434,24 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         segments_37[0].section_start = calculateOffset(segments_37[0].offset, current_size)
         segments_37[0].shift = segments_37[0].section_start - segments_37[0].offset
         return segments_37[0].section_start + segments_37[0].fsize
-    # todo: 2 fragmente, mindestens 1 fix
+    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    elif size == 2 and (fix_first or fix_last):
+        section_start = calculateOffset(segments_37[0].offset, current_size)
+        for tmp_111 in segments_37:
+            tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
+            tmp_111.section_start = section_start
+            current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
+        return current_size
+    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    elif size == 3 and fix_first and fix_last:
+        section_start = calculateOffset(segments_37[0].offset, current_size)
+        for tmp_111 in segments_37:
+            tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
+            tmp_111.section_start = section_start
+            current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
+        return current_size
     else:
         s: Dict[Tuple[int, int], int] = {}
         d: Dict[Tuple[int, int], int] = {}
@@ -539,6 +556,24 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         section[0].section_start = calculateOffset(section[0].offset, current_size)
         section[0].shift = section[0].section_start - section[0].offset
         return section[0].section_start + section[0].fsize
+    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    elif size == 2 and (fix_first or fix_last):
+        section_start = calculateOffset(section[0].offset, current_size)
+        for tmp_111 in section:
+            tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
+            tmp_111.section_start = section_start
+            current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
+        return current_size
+    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    elif size == 3 and fix_first and fix_last:
+        section_start = calculateOffset(section[0].offset, current_size)
+        for tmp_111 in section:
+            tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
+            tmp_111.section_start = section_start
+            current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
+        return current_size
     else:
         smt_constants = []
         for fragment in section:
