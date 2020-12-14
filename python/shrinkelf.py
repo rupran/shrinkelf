@@ -22,14 +22,20 @@ PERMUTE_WITH_GUROBI: str = "gurobi"
 PERMUTE_WITH_Z3: str = "z3"
 
 
-# FIXME: Doku
 class CleanUp(Exception):
+    """ Exception used to manage control flow and clean up open file and ELF descriptors. """
     def __init__(self, level, exitstatus):
+        """ Initialize self.
+
+        :param level: indicates which file and ELF descriptors are open
+        :param exitstatus: exit status to exit the program
+        """
         self.level = level
         self.exitstatus = exitstatus
 
 
 class Done(Exception):
+    """ Exception used for managing control flow. """
     pass
 
 
