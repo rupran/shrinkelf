@@ -43,8 +43,8 @@ class Done(Exception):
 cu = CleanUp(0, 0)
 
 
-# FIXME: Doku
 def print_error(text):
+    """ Print text to standard error. """
     print(text, file=stderr)
 
 
