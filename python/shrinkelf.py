@@ -12,11 +12,13 @@ import z3
 from elfdefinitions import *
 from util import *
 
-# FIXME: Doku
-# \brief File suffix for output file appended to the input file when no output file was specified
+# file suffix for output file appended to the input file when no output file was specified
 FILESUFFIX: str = ".shrinked"
+# command line option for permuting fragments using brute force
 PERMUTE_WITH_BRUTE_FORCE: str = "brute-force"
+# command line option for permuting fragments using gurobi
 PERMUTE_WITH_GUROBI: str = "gurobi"
+# command line option for permuting fragments using z3
 PERMUTE_WITH_Z3: str = "z3"
 
 
