@@ -426,7 +426,7 @@ def subtourelim(model, where):
 
 
 # Fixme: Doku
-def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last, file):
+def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix_first, fix_last, file, log):
     size = len(segments_37)
     if size == 1:
         # Fixme: Doku
@@ -451,8 +451,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         try:
             # todo: better names
             m: gp.Model = gp.Model("section-{0}".format(index))
-            # todo: program parameter whether to log or not
-            m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
+            m.Params.LogToConsole = 0
+            if log:
+                m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
             x = m.addVars(d.keys(), obj=d, name="x", vtype=GRB.BINARY)
             y = m.addVars(s.keys(), obj=s, name="y", vtype=GRB.BINARY)
             m.setAttr("ModelSense", GRB.MINIMIZE)
@@ -507,7 +508,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 
 
 # Fixme: Doku
-def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name):
+def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name, log):
     for i in range(1, len(segments_36)):
         fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
         fix_last = False
@@ -515,7 +516,7 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file
             last = segments_36[i][-1]
             ahead = segments_36[i + 1][0]
             fix_last = (last.offset + last.fsize) // PAGESIZE == ahead.offset // PAGESIZE
-        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last, file_name)
+        current_size = solve_lp_instance(segments_36[i], current_size, i, fix_first, fix_last, file_name, log)
     return current_size
 
 
@@ -610,7 +611,7 @@ def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> 
 #
 # \return The [description of the file layout](@ref layoutDescription) of the output file
 def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int, elfclass: c_int,
-                           permute_ranges: str, file_name) -> LayoutDescription:
+                           permute_ranges: str, file_name, log) -> LayoutDescription:
     size = len(ranges_13)
     ret: LayoutDescription = LayoutDescription()
     ret.segment_num = size
@@ -628,13 +629,12 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         ret.segments[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
-    # todo: Bedingung für segment liegt in der selben page prüfen
     if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
         current_size = permute(ret.segments, current_size)
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
-        current_size = solve_with_gurobi(ret.segments, current_size, file_name)
+        current_size = solve_with_gurobi(ret.segments, current_size, file_name, log)
     elif permute_ranges == PERMUTE_WITH_Z3:
         current_size = solve_with_z3(ret.segments, current_size)
     else:
@@ -1031,7 +1031,7 @@ def calculateSectionSize(section: List[FileFragment]):
 
 
 # FIXME: Doku
-def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
+def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, log):
     # --------------------------------------------------------------------------- #
     #  Setup                                                                      #
     # --------------------------------------------------------------------------- #
@@ -1131,7 +1131,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
-        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file)
+        desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file, log)
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
@@ -1445,8 +1445,9 @@ if __name__ == "__main__":
     parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI, PERMUTE_WITH_Z3],
                         help="Permute fragments for potential smaller output file.\nOption determines which method to use.\nWARNING: brute-force is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
+    parser.add_argument("-l", "--log", action='store_true', help="Output log files when using gurobi")
     args = parser.parse_args()
     parsed = parse_args(args.keep, args.keep_file, args.file, args.output_file)
     if parsed:
-        shrinkelf(parsed[0], args.file, parsed[1], args.permute)
+        shrinkelf(parsed[0], args.file, parsed[1], args.permute, args.log)
     exit(cu.exitstatus)
