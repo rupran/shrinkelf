@@ -48,12 +48,14 @@ def print_error(text):
     print(text, file=stderr)
 
 
-# FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
-# overlaps with and does NOT insert `item` in list
 def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+    """
+    Insert element `item` in sorted list of ranges and return `None` on success. On failure return the range `item`
+    overlaps with and do NOT insert `item` in list.
+    """
     length_01 = len(list_of_items)
     if length_01 == 0:
+        # list is empty
         list_of_items.append(item_03)
         return None
     else:
@@ -70,12 +72,14 @@ def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) 
         return None
 
 
-# FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
-# overlaps with and does NOT insert `item` in list
 def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Optional[FileFragment]:
+    """
+    Insert element `item` in sorted list of ranges and return `None` on success. On failure return the range `item`
+    overlaps with and do NOT insert `item` in list.
+    """
     length_02 = len(list_of_items)
     if length_02 == 0:
+        # list is empty
         list_of_items.append(item_04)
         return None
     else:
