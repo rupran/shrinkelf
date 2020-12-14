@@ -1434,9 +1434,8 @@ if __name__ == "__main__":
     parser.add_argument("-k", "--keep", metavar="RANGE", action='append',
                         help="Keep given %(metavar)s in new file. Accepted formats are\n 'START-END'   exclusive END\n 'START:LEN'   LEN in bytes\nwith common prefixes for base")
     parser.add_argument("-K", "--keep-file", metavar="FILE", help="File to read ranges from")
-    # todo: fix help message, type, etc.
     parser.add_argument("-p", "--permute", action='store', choices=[PERMUTE_WITH_BRUTE_FORCE, PERMUTE_WITH_GUROBI, PERMUTE_WITH_Z3],
-                        help="Permute fragments for potential smaller output file.\nWARNING: The used algorithm is in O(n!)")
+                        help="Permute fragments for potential smaller output file.\nOption determines which method to use.\nWARNING: brute-force is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     args = parser.parse_args()
     parsed = parse_args(args.keep, args.keep_file, args.file, args.output_file)
