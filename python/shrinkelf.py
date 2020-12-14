@@ -449,18 +449,28 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 b_add = ((b.offset % PAGESIZE) - (a.end_in_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
                 d[(i, j)] = b_add
         try:
-            # todo: better names
             m: gp.Model = gp.Model("section-{0}".format(index))
             m.Params.LogToConsole = 0
             if log:
                 m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
+            # fragment pairs for determining their order
             x = m.addVars(d.keys(), obj=d, name="x", vtype=GRB.BINARY)
+            # fragment pairs to choose the last/first one
             y = m.addVars(s.keys(), obj=s, name="y", vtype=GRB.BINARY)
             m.setAttr("ModelSense", GRB.MINIMIZE)
+            # number of connections between fragments. It is size-1 because every fragment has a successor except the
+            # last one
             m.addConstr(gp.quicksum(x), rhs=size-1, sense=GRB.EQUAL, name="frag")
+            # there is exactly one last/first fragment pair
             m.addConstr(gp.quicksum(y), rhs=1, sense=GRB.EQUAL, name="ring")
+            # there is exactly one 'connection' leaving a fragment: either to its successor or it is the last fragment
+            # and so it 'connects' to the first
             m.addConstrs(((x.sum(j, '*') + y.sum(j, '*')) == 1 for j in range(size)), "out")
+            # there is exactly one incoming 'connection' to a fragment: either from its predecessor or it is the first
+            # fragment and so it is 'connected' to the last
             m.addConstrs(((x.sum('*', j) + y.sum('*', j)) == 1 for j in range(size)), "in")
+            # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+            # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
             if fix_first:
                 # keep first fragment of the section in its place because it will be loaded in the same page as the end of
                 # the previous section
