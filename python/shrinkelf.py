@@ -150,13 +150,12 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
     return ret
 
 
-# FIXME: Doku
-# \brief Counts the loadable [address ranges](@ref segmentRange) in a list
-#
-# \param segmentList The list
-#
-# \return Number of loadable [address ranges](@ref segmentRange)
 def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
+    """ Count the loadable FragmentRanges in a list.
+
+    :param segment_list: the list
+    :return: number of loadable FragmentRanges
+    """
     ret = 0
     for item_05 in segment_list:
         if item_05.loadable:
