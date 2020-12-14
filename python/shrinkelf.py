@@ -39,7 +39,7 @@ class Done(Exception):
     pass
 
 
-# FIXME: Doku
+# global CleanUp object used for managing control flow
 cu = CleanUp(0, 0)
 
 
