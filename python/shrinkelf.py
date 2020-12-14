@@ -34,13 +34,13 @@ class CleanUp(Exception):
         self.exitstatus = exitstatus
 
 
+# global CleanUp object used for managing control flow
+cu = CleanUp(0, 0)
+
+
 class Done(Exception):
     """ Exception used for managing control flow. """
     pass
-
-
-# global CleanUp object used for managing control flow
-cu = CleanUp(0, 0)
 
 
 def print_error(text):
