@@ -96,13 +96,12 @@ def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Opt
         return None
 
 
-# FIXME: Doku
-# \brief Counts LOAD program headers in an ELF file
-#
-# \param elf The file
-#
-# \returns The number of LOAD program headers
 def countLOADs(elf) -> int:
+    """ Count LOAD program headers in an ELF file.
+
+    :param elf: the file
+    :return: the number of LOAD program headers
+    """
     count = 0
     # number of segments in file
     phdrnum = c_size_t(0)
