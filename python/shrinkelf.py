@@ -1041,8 +1041,12 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01):
         cu.exitstatus = 1
         return
     # file descriptor of input file
-    # todo: file not found error abfangen
-    srcfd: int = os.open(file, os.O_RDONLY)
+    try:
+        srcfd: int = os.open(file, os.O_RDONLY)
+    except FileNotFoundError:
+        print_error("Input file " + file + " not found")
+        cu.exitstatus = 1
+        return
     if srcfd < 0:
         print_error("Could not open input file " + file)
         cu.exitstatus = 1
@@ -1321,7 +1325,12 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
             return None
         else:
             keep = []
-            f = open(keep_file)
+            try:
+                f = open(keep_file)
+            except FileNotFoundError:
+                print_error("File " + keep_file + " not found. Aborting!")
+                cu.exitstatus = 1
+                return None
             for line in f:
                 keep.append(line.rstrip())
             f.close()
