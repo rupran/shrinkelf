@@ -118,17 +118,14 @@ def countLOADs(elf) -> int:
     return count
 
 
-# FIXME: Doku
-# \brief Constructs the [address ranges](@ref segmentRange) of a section
-#
-# \param section List of [data ranges](@ref range) of a section
-# \param section_start Start address of this section in the new file
-#
-# \return A list of [address ranges](@ref segmentRange) fit for rearrangement or `None` in case of an error
 def segments(section: List[FileFragment], section_start: int) -> Optional[List[FragmentRange]]:
+    """ Construct the FragmentRanges of a section.
+
+    :param section: list of FileFragments of a section
+    :param section_start: start address of this section in the new file
+    :return: a list of FragmentRanges fit for rearrangement or `None` in case of an error
+    """
     if section is None or len(section) == 0:
-        # XXX: Debug
-        print("segments: section was none")
         return None
     ret: List[FragmentRange] = []
     current = FragmentRange(offset=section[0].section_offset + section[0].start, vaddr=section[0].memory_info.start,
@@ -137,13 +134,13 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
                             flags=section[0].memory_info.flags, section_start=section_start)
     for i in range(1, len(section)):
         if ((current.vaddr + current.msize) // PAGESIZE) == (section[i].memory_info.start // PAGESIZE):
-            # data of tmp range will be loaded in the same page as content of current range => merge the ranges
+            # data of indexed range will be loaded in the same page as content of current range => merge the ranges
             current.fsize = section[i].section_offset + section[i].end - current.offset
             current.msize = section[i].memory_info.end - current.vaddr
             current.loadable |= section[i].memory_info.loadable
             current.flags |= section[i].memory_info.flags
         else:
-            # data of tmp range will not be loaded in the same page as content of current range => create new range
+            # data of indexed range will not be loaded in the same page as content of current range => create new range
             ret.append(current)
             current = FragmentRange(offset=section[i].section_offset + section[i].start, section_start=section_start,
                                     fsize=section[i].end - section[i].start, vaddr=section[i].memory_info.start,
