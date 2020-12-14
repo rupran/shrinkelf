@@ -163,15 +163,15 @@ def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
     return ret
 
 
-# FIXME: Doku
-# \brief Constructor for ::permutation
-#
-# \param segments List of lists of [address ranges](@ref segmentRange) imposing constraints on the permutation
-# \param index The index for which a ::permutation is constructed
-# \param current_size The currently occupied size in the new file
-#
-# \return The new ::permutation
+# todo: move to Permutation
 def createPermutation(segments_01: List[List[FragmentRange]], index: int, current_size: int) -> Permutation:
+    """ Constructor for Permutation.
+
+    :param segments_01: List of lists of FragmentRanges imposing constraints on the permutation
+    :param index: the index for which section a Permutation is constructed
+    :param current_size: currently occupied size in the new file
+    :return: the new Permutation
+    """
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
@@ -186,9 +186,7 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
             # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
-    # FIXME: Doku
-    # set size of the section under the currently best permutation - conceptional - to infinity because it is not
-    # determined now
+    # mark size of the section under the currently best permutation as not determined yet
     ret.size = -1
     return ret
 
