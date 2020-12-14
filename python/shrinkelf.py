@@ -1323,12 +1323,11 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
             keep = []
             f = open(keep_file)
             for line in f:
-                keep.append(line)
+                keep.append(line.rstrip())
             f.close()
     ranges_123: List[Tuple[int, int]] = []
     error = False
     for item in keep:
-        # todo: item mit rstrip() formatieren
         if ":" in item:
             frag_desc = item.split(":")
             if len(frag_desc) != 2:
@@ -1395,7 +1394,7 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
                 continue
             tmp = insertTuple((start, end), ranges_123)
             if tmp is not None:
-                print_error(item + "overlaps with" + str(tmp))
+                print_error(item + " overlaps with " + str(tmp))
                 error = True
                 continue
         else:
@@ -1407,7 +1406,7 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
         cu.exitstatus = 1
         return None
     if error:
-        print_error("Errors during argument parsing detected. Abort...")
+        print_error("Errors during argument parsing detected. Aborting")
         cu.exitstatus = 1
         return None
     # determine output file name
