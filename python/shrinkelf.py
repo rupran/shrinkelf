@@ -434,8 +434,8 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         segments_37[0].section_start = calculateOffset(segments_37[0].offset, current_size)
         segments_37[0].shift = segments_37[0].section_start - segments_37[0].offset
         return segments_37[0].section_start + segments_37[0].fsize
-    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
-    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
     elif size == 2 and (fix_first or fix_last):
         section_start = calculateOffset(segments_37[0].offset, current_size)
         for tmp_111 in segments_37:
@@ -443,8 +443,8 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             tmp_111.section_start = section_start
             current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
         return current_size
-    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
-    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
     elif size == 3 and fix_first and fix_last:
         section_start = calculateOffset(segments_37[0].offset, current_size)
         for tmp_111 in segments_37:
@@ -486,8 +486,8 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             # there is exactly one incoming 'connection' to a fragment: either from its predecessor or it is the first
             # fragment and so it is 'connected' to the last
             m.addConstrs(((x.sum('*', j) + y.sum('*', j)) == 1 for j in range(size)), "in")
-            # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
-            # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+            # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+            # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
             if fix_first:
                 # keep first fragment of the section in its place because it will be loaded in the same page as the end of
                 # the previous section
@@ -556,8 +556,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         section[0].section_start = calculateOffset(section[0].offset, current_size)
         section[0].shift = section[0].section_start - section[0].offset
         return section[0].section_start + section[0].fsize
-    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
-    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
     elif size == 2 and (fix_first or fix_last):
         section_start = calculateOffset(section[0].offset, current_size)
         for tmp_111 in section:
@@ -565,8 +565,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
             tmp_111.section_start = section_start
             current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
         return current_size
-    # todo: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
-    # todo: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
+    # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+    # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
     elif size == 3 and fix_first and fix_last:
         section_start = calculateOffset(section[0].offset, current_size)
         for tmp_111 in section:
@@ -605,6 +605,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
             start_terms.append(p[i] * PAGESIZE + smt_constants[i][0] == start_13)
         optimizer.add(z3.Or(end_terms))
         optimizer.add(z3.Or(start_terms))
+        # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
+        # xxx: funktioniert momentan, da es FragmentRanges geht, die die ganze Page abdecken
         # constraints for first range
         if fix_first:
             if current_size % PAGESIZE > smt_constants[0][0]:
