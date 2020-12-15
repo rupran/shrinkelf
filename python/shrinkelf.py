@@ -191,17 +191,16 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     return ret
 
 
-# FIXME: Doku
-# \brief Calculates offset of a section in new file.
-#
-# Constraint: new offset needs to be equal to prior offset modulo page size because LOAD segments require that
-# `p_offset` (offset in file) is equal to `p_vaddr` (address in virtual address space) modulo page size.
-#
-# \param priorOffset Offset of section in original file
-# \param occupiedSpace Number of already occupied bytes in new file
-#
-# \return Offset in new file
 def calculateOffset(prior_offset: int, occupied_space: int) -> int:
+    """ Calculate offset of a fragment in new file.
+
+    Constraint: new offset needs to be equal to prior offset modulo page size because LOAD segments require that
+    `p_offset` (offset in file) is equal to `p_vaddr` (address in virtual address space) modulo page size.
+
+    :param prior_offset: offset of fragment in original file
+    :param occupied_space: number of already occupied bytes in new file
+    :return: offset in new file
+    """
     prior_page_offset = prior_offset % PAGESIZE
     occupied_page_offset = occupied_space % PAGESIZE
     if occupied_page_offset <= prior_page_offset:
