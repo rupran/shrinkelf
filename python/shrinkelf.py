@@ -12,40 +12,50 @@ import z3
 from elfdefinitions import *
 from util import *
 
-# FIXME: Doku
-# \brief File suffix for output file appended to the input file when no output file was specified
+# file suffix for output file appended to the input file when no output file was specified
 FILESUFFIX: str = ".shrinked"
+# command line option for permuting fragments using brute force
 PERMUTE_WITH_BRUTE_FORCE: str = "brute-force"
+# command line option for permuting fragments using gurobi
 PERMUTE_WITH_GUROBI: str = "gurobi"
+# command line option for permuting fragments using z3
 PERMUTE_WITH_Z3: str = "z3"
 
 
-# FIXME: Doku
 class CleanUp(Exception):
+    """ Exception used to manage control flow and clean up open file and ELF descriptors. """
     def __init__(self, level, exitstatus):
+        """ Initialize self.
+
+        :param level: indicates which file and ELF descriptors are open
+        :param exitstatus: exit status to exit the program
+        """
         self.level = level
         self.exitstatus = exitstatus
 
 
-class Done(Exception):
-    pass
-
-
-# FIXME: Doku
+# global CleanUp object used for managing control flow
 cu = CleanUp(0, 0)
 
 
-# FIXME: Doku
+class Done(Exception):
+    """ Exception used for managing control flow. """
+    pass
+
+
 def print_error(text):
+    """ Print text to standard error. """
     print(text, file=stderr)
 
 
-# FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
-# overlaps with and does NOT insert `item` in list
 def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
+    """
+    Insert element `item` in sorted list of ranges and return `None` on success. On failure return the range `item`
+    overlaps with and do NOT insert `item` in list.
+    """
     length_01 = len(list_of_items)
     if length_01 == 0:
+        # list is empty
         list_of_items.append(item_03)
         return None
     else:
@@ -62,12 +72,14 @@ def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) 
         return None
 
 
-# FIXME: Doku
-# Inserts element `item` in sorted list of ranges and returns `None` on success. On failure returns the range `item`
-# overlaps with and does NOT insert `item` in list
 def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Optional[FileFragment]:
+    """
+    Insert element `item` in sorted list of ranges and return `None` on success. On failure return the range `item`
+    overlaps with and do NOT insert `item` in list.
+    """
     length_02 = len(list_of_items)
     if length_02 == 0:
+        # list is empty
         list_of_items.append(item_04)
         return None
     else:
@@ -84,13 +96,12 @@ def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Opt
         return None
 
 
-# FIXME: Doku
-# \brief Counts LOAD program headers in an ELF file
-#
-# \param elf The file
-#
-# \returns The number of LOAD program headers
 def countLOADs(elf) -> int:
+    """ Count LOAD program headers in an ELF file.
+
+    :param elf: the file
+    :return: the number of LOAD program headers
+    """
     count = 0
     # number of segments in file
     phdrnum = c_size_t(0)
@@ -107,17 +118,14 @@ def countLOADs(elf) -> int:
     return count
 
 
-# FIXME: Doku
-# \brief Constructs the [address ranges](@ref segmentRange) of a section
-#
-# \param section List of [data ranges](@ref range) of a section
-# \param section_start Start address of this section in the new file
-#
-# \return A list of [address ranges](@ref segmentRange) fit for rearrangement or `None` in case of an error
 def segments(section: List[FileFragment], section_start: int) -> Optional[List[FragmentRange]]:
+    """ Construct the FragmentRanges of a section.
+
+    :param section: list of FileFragments of a section
+    :param section_start: start address of this section in the new file
+    :return: a list of FragmentRanges fit for rearrangement or `None` in case of an error
+    """
     if section is None or len(section) == 0:
-        # XXX: Debug
-        print("segments: section was none")
         return None
     ret: List[FragmentRange] = []
     current = FragmentRange(offset=section[0].section_offset + section[0].start, vaddr=section[0].memory_info.start,
@@ -126,13 +134,13 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
                             flags=section[0].memory_info.flags, section_start=section_start)
     for i in range(1, len(section)):
         if ((current.vaddr + current.msize) // PAGESIZE) == (section[i].memory_info.start // PAGESIZE):
-            # data of tmp range will be loaded in the same page as content of current range => merge the ranges
+            # data of indexed range will be loaded in the same page as content of current range => merge the ranges
             current.fsize = section[i].section_offset + section[i].end - current.offset
             current.msize = section[i].memory_info.end - current.vaddr
             current.loadable |= section[i].memory_info.loadable
             current.flags |= section[i].memory_info.flags
         else:
-            # data of tmp range will not be loaded in the same page as content of current range => create new range
+            # data of indexed range will not be loaded in the same page as content of current range => create new range
             ret.append(current)
             current = FragmentRange(offset=section[i].section_offset + section[i].start, section_start=section_start,
                                     fsize=section[i].end - section[i].start, vaddr=section[i].memory_info.start,
@@ -142,13 +150,12 @@ def segments(section: List[FileFragment], section_start: int) -> Optional[List[F
     return ret
 
 
-# FIXME: Doku
-# \brief Counts the loadable [address ranges](@ref segmentRange) in a list
-#
-# \param segmentList The list
-#
-# \return Number of loadable [address ranges](@ref segmentRange)
 def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
+    """ Count the loadable FragmentRanges in a list.
+
+    :param segment_list: the list
+    :return: number of loadable FragmentRanges
+    """
     ret = 0
     for item_05 in segment_list:
         if item_05.loadable:
@@ -156,15 +163,15 @@ def countLoadableSegmentRanges(segment_list: List[FragmentRange]):
     return ret
 
 
-# FIXME: Doku
-# \brief Constructor for ::permutation
-#
-# \param segments List of lists of [address ranges](@ref segmentRange) imposing constraints on the permutation
-# \param index The index for which a ::permutation is constructed
-# \param current_size The currently occupied size in the new file
-#
-# \return The new ::permutation
+# todo: move to Permutation
 def createPermutation(segments_01: List[List[FragmentRange]], index: int, current_size: int) -> Permutation:
+    """ Constructor for Permutation.
+
+    :param segments_01: List of lists of FragmentRanges imposing constraints on the permutation
+    :param index: the index for which section a Permutation is constructed
+    :param current_size: currently occupied size in the new file
+    :return: the new Permutation
+    """
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
@@ -179,24 +186,21 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
             # mark last element because its on the same page as the next section
             ret.tmp[-1] = -1
             ret.result[-1] = -1
-    # FIXME: Doku
-    # set size of the section under the currently best permutation - conceptional - to infinity because it is not
-    # determined now
+    # mark size of the section under the currently best permutation as not determined yet
     ret.size = -1
     return ret
 
 
-# FIXME: Doku
-# \brief Calculates offset of a section in new file.
-#
-# Constraint: new offset needs to be equal to prior offset modulo page size because LOAD segments require that
-# `p_offset` (offset in file) is equal to `p_vaddr` (address in virtual address space) modulo page size.
-#
-# \param priorOffset Offset of section in original file
-# \param occupiedSpace Number of already occupied bytes in new file
-#
-# \return Offset in new file
 def calculateOffset(prior_offset: int, occupied_space: int) -> int:
+    """ Calculate offset of a fragment in new file.
+
+    Constraint: new offset needs to be equal to prior offset modulo page size because LOAD segments require that
+    `p_offset` (offset in file) is equal to `p_vaddr` (address in virtual address space) modulo page size.
+
+    :param prior_offset: offset of fragment in original file
+    :param occupied_space: number of already occupied bytes in new file
+    :return: offset in new file
+    """
     prior_page_offset = prior_offset % PAGESIZE
     occupied_page_offset = occupied_space % PAGESIZE
     if occupied_page_offset <= prior_page_offset:
@@ -376,17 +380,17 @@ def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[F
 # FIXME: Doku
 def calculatePHDRInfo(fileoffset: int, memoryoffset: int, elfclass: c_int, add_ehdr: bool) -> Tuple[int, int, int]:
     if elfclass == ELFCLASS32:
-        realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf32_ehdr
-        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf32_ehdr
+        realfileoffset = fileoffset if not add_ehdr else fileoffset + SIZEOF_ELF32_EHDR
+        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + SIZEOF_ELF32_EHDR
         phdr_start = roundUp(realfileoffset, PHDR32ALIGN)
         phdr_vaddr = roundUp(realmemoryoffset, PHDR32ALIGN)
-        entry_size = sizeof_elf32_phdr
+        entry_size = SIZEOF_ELF32_PHDR
     else:
-        realfileoffset = fileoffset if not add_ehdr else fileoffset + sizeof_elf64_ehdr
-        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + sizeof_elf64_ehdr
+        realfileoffset = fileoffset if not add_ehdr else fileoffset + SIZEOF_ELF64_EHDR
+        realmemoryoffset = memoryoffset if not add_ehdr else memoryoffset + SIZEOF_ELF64_EHDR
         phdr_start = roundUp(realfileoffset, PHDR64ALIGN)
         phdr_vaddr = roundUp(realmemoryoffset, PHDR64ALIGN)
-        entry_size = sizeof_elf64_phdr
+        entry_size = SIZEOF_ELF64_PHDR
     return phdr_start, phdr_vaddr, entry_size
 
 
@@ -668,9 +672,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     # Start with one for file header and one for PHDR table
     loads = 2
     if elfclass == ELFCLASS32:
-        current_size = sizeof_elf32_ehdr
+        current_size = SIZEOF_ELF32_EHDR
     else:
-        current_size = sizeof_elf64_ehdr
+        current_size = SIZEOF_ELF64_EHDR
     # ignore section 0
     for i in range(1, size):
         # determine the address ranges from the data ranges of a section
@@ -768,23 +772,23 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             # meaning inserting after file header)
             if i == 0:
                 if elfclass == ELFCLASS32:
-                    phdr_start = roundUp(sizeof_elf32_ehdr, PHDR32ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + sizeof_elf32_ehdr, PHDR32ALIGN)
-                    entry_size = sizeof_elf32_phdr
+                    phdr_start = roundUp(SIZEOF_ELF32_EHDR, PHDR32ALIGN)
+                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF32_EHDR, PHDR32ALIGN)
+                    entry_size = SIZEOF_ELF32_PHDR
                 else:
-                    phdr_start = roundUp(sizeof_elf64_ehdr, PHDR64ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + sizeof_elf64_ehdr, PHDR64ALIGN)
-                    entry_size = sizeof_elf64_phdr
+                    phdr_start = roundUp(SIZEOF_ELF64_EHDR, PHDR64ALIGN)
+                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF64_EHDR, PHDR64ALIGN)
+                    entry_size = SIZEOF_ELF64_PHDR
             else:
                 tmp_114 = ret.segments[i][-1]
                 if elfclass == ELFCLASS32:
                     phdr_start = roundUp(tmp_114.offset + tmp_114.fsize, PHDR32ALIGN)
                     phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR32ALIGN)
-                    entry_size = sizeof_elf32_phdr
+                    entry_size = SIZEOF_ELF32_PHDR
                 else:
                     phdr_start = roundUp(tmp_114.offset + tmp_114.fsize + tmp_114.shift, PHDR64ALIGN)
                     phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR64ALIGN)
-                    entry_size = sizeof_elf64_phdr
+                    entry_size = SIZEOF_ELF64_PHDR
             # check if PHDR table fits in the space in memory after section i
             if i == size - 1:
                 # insert after all sections
@@ -1239,9 +1243,9 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                     dstphdrs[i].p_paddr = dstphdrs[i].p_vaddr
                     dstphdrs[i].p_offset = c_uint64(desc.phdr_start)
                     if elfclass == ELFCLASS32:
-                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf32_phdr)
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * SIZEOF_ELF32_PHDR)
                     else:
-                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * sizeof_elf64_phdr)
+                        dstphdrs[i].p_filesz = c_uint64(desc.phdr_entries * SIZEOF_ELF64_PHDR)
                     dstphdrs[i].p_memsz = dstphdrs[i].p_filesz
         # --------------------------------------------------------------------------- #
         # Copy sections and section headers                                           #
