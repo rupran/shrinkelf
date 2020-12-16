@@ -582,6 +582,7 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         end_13 = z3.Int("end")
         start_13 = z3.Int("start")
         optimizer = z3.Optimize()
+        z3.set_param("parallel.enable", True)
         end_terms = []
         start_terms = []
         # constraints
