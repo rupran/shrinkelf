@@ -309,15 +309,14 @@ def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_
                     current_size = calculateOffset(tmp_12.offset, current_size) + tmp_12.fsize
 
 
-# FIXME: Doku
-# \brief Permutes the address ranges for all sections
-#
-# \param segments Array of list of address ranges
-# \param size Size of `segments`
-# \param current_size The currently occupied space in the output file
-#
-# \return The size of the output file after inserting all address ranges
 def permute(segments_08: List[List[FragmentRange]], current_size: int) -> int:
+    """ Permute the address ranges for all sections.
+
+    :param segments_08: the sections' contents
+    :type segments_08: list of lists of FragmentRanges
+    :param current_size: the currently occupied space in the output file
+    :return: the size of the output file after inserting all sections
+    """
     for i in range(1, len(segments_08)):
         perm = createPermutation(segments_08, i, current_size)
         # permute the address ranges of section i
