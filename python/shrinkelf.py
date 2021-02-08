@@ -209,15 +209,14 @@ def calculateOffset(prior_offset: int, occupied_space: int) -> int:
         return occupied_space - occupied_page_offset + prior_page_offset + PAGESIZE
 
 
-# FIXME: Doku
-# \brief Evaluates the current permutation of address ranges
-#
-# Computes the size of the section if the address ranges it contains are inserted in the ordering described by the
-# current permutation. Updates the currently best permutation and its resulting size if needed.
-#
-# \param perm The [state of the permutation algorithm](@ref permutation) containing the current and the best permutation
-# \param segments The address ranges to insert
 def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
+    """ Evaluate the current permutation of FragmentRanges.
+
+    Compute the size of the section if the FragmentRanges it contains are inserted in the ordering described by the
+    current permutation. Update the currently best permutation and its resulting size if needed.
+    :param perm: the state of the permutation algorithm containing the current and the best permutation
+    :param segments_02: the FragmentRanges to insert
+    """
     start_01 = 0
     end_01 = 0
     # look up for every position (ranges from 1 to the number of segments) which segment to insert
