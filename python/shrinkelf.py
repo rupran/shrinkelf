@@ -454,7 +454,8 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         d: Dict[Tuple[int, int], int] = {}
         for i in range(size):
             a = segments_37[i]
-            a_start = a.end_in_section() % PAGESIZE
+            # TODO: motivation?
+            a_start = calculateOffset(a.offset, current_size) - current_size + a.fsize
             for j in range(size):
                 if i == j:
                     continue
