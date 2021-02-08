@@ -328,16 +328,14 @@ def permute(segments_08: List[List[FragmentRange]], current_size: int) -> int:
     return current_size
 
 
-# FIXME: Doku
-# \brief Rounds up `value` to the next multiple of `base`
-#
-# Computes a value `x` such that `x % base == 0`, `x >= value` and `x` is minimal.
-#
-# \param value The value for which the next bigger multiple is computed
-# \param base The value of which the multiple is computed
-#
-# \returns The multiple of base
 def roundUp(value: int, base: int) -> int:
+    """ Round up `value` to the next multiple of `base`.
+
+    Compute a value `x` such that `x % base == 0`, `x >= value` and `x` is minimal.
+    :param value: the value for which the next bigger multiple is computed
+    :param base: the value of which the multiple is computed
+    :return: the multiple of base
+    """
     tmp_13 = value % base
     if tmp_13 != 0:
         return value - tmp_13 + base
