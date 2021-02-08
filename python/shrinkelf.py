@@ -277,13 +277,13 @@ def recursive_permute(perm: Permutation, segments_04: List[FragmentRange], index
                 perm.tmp[i] = 0
 
 
-# FIXME: Doku
-# \brief Computes the offset of the address ranges in the output file
-#
-# \param perm The order in which the ranges are inserted
-# \param segments The ranges that are inserted
-# \param current_size The already occupied size in the output file
 def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_size: int):
+    """ Compute the offset of the FragmentRanges in the output file.
+
+    :param perm: the order in which the ranges are inserted
+    :param segments_07: the ranges that are inserted
+    :param current_size: the already occupied size in the output file
+    """
     section_start = 0
     for i in range(1, perm.num_entries + 1):
         if i == 1 and perm.result[0] == -1:
