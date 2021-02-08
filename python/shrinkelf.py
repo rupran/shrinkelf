@@ -248,13 +248,13 @@ def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
         perm.size = size
 
 
-# FIXME: Doku
-# \brief recursive backtracking algorithm for permutation of [address ranges](@ref segmentRange)
-#
-# \param perm The state of the algorithm
-# \param segments The address ranges to permute
-# \param index The current position where a address range is inserted (doubles as depth of recursion)
 def recursive_permute(perm: Permutation, segments_04: List[FragmentRange], index: int):
+    """ recursive backtracking algorithm for permutation of FragmentRanges
+
+    :param perm: the state of the algorithm
+    :param segments_04: the address ranges to permute
+    :param index: the current position where a address range is inserted (doubles as depth of recursion)
+    """
     if index > perm.num_entries:
         # all address ranges are inserted
         evaluate(perm, segments_04)
