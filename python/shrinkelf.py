@@ -758,30 +758,18 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 current_fragment.flags = tmp_113.flags
                 current_fragment.loadable = tmp_113.loadable
     # insert PHDR table
-    current_fragment = ret.segment_list[0]
     try:
         for i in range(0, size):
             # determine which start addresses the PHDR table would have if it were inserted after section i (i == 0
             # meaning inserting after file header)
             if i == 0:
-                if elfclass == ELFCLASS32:
-                    phdr_start = roundUp(SIZEOF_ELF32_EHDR, PHDR32ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF32_EHDR, PHDR32ALIGN)
-                    entry_size = SIZEOF_ELF32_PHDR
-                else:
-                    phdr_start = roundUp(SIZEOF_ELF64_EHDR, PHDR64ALIGN)
-                    phdr_vaddr = roundUp(current_fragment.vaddr + SIZEOF_ELF64_EHDR, PHDR64ALIGN)
-                    entry_size = SIZEOF_ELF64_PHDR
+                tmp = ret.segments[1][0]
+                phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(0, tmp.vaddr - (tmp.offset + tmp.shift), elfclass, True)
             else:
-                tmp_114 = ret.segments[i][-1]
-                if elfclass == ELFCLASS32:
-                    phdr_start = roundUp(tmp_114.offset + tmp_114.fsize, PHDR32ALIGN)
-                    phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR32ALIGN)
-                    entry_size = SIZEOF_ELF32_PHDR
-                else:
-                    phdr_start = roundUp(tmp_114.offset + tmp_114.fsize + tmp_114.shift, PHDR64ALIGN)
-                    phdr_vaddr = roundUp(tmp_114.vaddr + tmp_114.msize, PHDR64ALIGN)
-                    entry_size = SIZEOF_ELF64_PHDR
+                tmp = ret.segments[i][-1]
+                fileoffset = tmp.offset + tmp.fsize + tmp.shift
+                memoryoffset = tmp.vaddr + tmp.msize
+                phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
             # check if PHDR table fits in the space in memory after section i
             if i == size - 1:
                 # insert after all sections
@@ -793,59 +781,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 table_size = entry_size * ret.phdr_entries
                 current_size = ret.phdr_start + table_size
                 raise Done()
-            else:
-                index = ret.segment_list.index(current_fragment)
-                while phdr_vaddr >= ret.segment_list[index + 1].vaddr:
-                    index += 1
-                current_fragment = ret.segment_list[index]
-                if phdr_vaddr < current_fragment.vaddr + current_fragment.msize:
-                    ahead = ret.segments[i + 1][0]
-                    if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
-                        ret.phdr_start = phdr_start
-                        ret.phdr_vaddr = phdr_vaddr
-                        ret.phdr_entries = ret.list_entries
-                        if ahead.offset + ahead.shift < ret.phdr_start + ret.phdr_entries * entry_size:
-                            shift = roundUp(ret.phdr_start + ret.phdr_entries * entry_size - (ahead.offset + ahead.shift),
-                                            PAGESIZE)
-                            for j in range(i + 1, size):
-                                for tmp3 in ret.segments[j]:
-                                    tmp3.shift += shift
-                                    tmp3.section_start += shift
-                            current_size += shift
-                            # correct offset of LOAD PHDRs after inserting PHDR table
-                            current_fragment.fsize += shift
-                            index = ret.segment_list.index(current_fragment)
-                            for tmp4 in ret.segment_list[index:]:
-                                tmp4.offset += shift
-                        if index < len(ret.segment_list):
-                            ahead = ret.segment_list[index + 1]
-                            # last memory page with content from the current range
-                            current_page = (current_fragment.vaddr + current_fragment.msize) // PAGESIZE
-                            # first memory page with content from the next range
-                            tmp_page = ahead.vaddr // PAGESIZE
-                            # last file page with content from the current range
-                            current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
-                            # first file page with content from the next range
-                            tmp_filepage = (ahead.offset + ahead.shift) // PAGESIZE
-                            if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
-                                # data of next range will be loaded in the following page as content of current range
-                                # => merge the ranges
-                                current_fragment.fsize = ahead.offset + ahead.shift + ahead.fsize - current_fragment.offset
-                                current_fragment.msize = ahead.vaddr + ahead.msize - current_fragment.vaddr
-                                current_fragment.loadable |= ahead.loadable
-                                current_fragment.flags |= ahead.flags
-                                ret.list_entries -= 1
-                                ret.phdr_entries -= 1
-                                ret.segment_list.remove(ahead)
-                        raise Done
-                else:
-                    fits = True
-                    for ahead in ret.segments[i + 1]:
-                        if ahead.vaddr < phdr_vaddr + entry_size * ret.list_entries:
-                            fits = False
-                    if not fits:
-                        continue
-                    ahead = ret.segments[i + 1][0]
+            elif i == 0:
+                ahead = ret.segments[i + 1][0]
+                if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
                     ret.phdr_start = phdr_start
                     ret.phdr_vaddr = phdr_vaddr
                     ret.phdr_entries = ret.list_entries
@@ -858,33 +796,105 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                                 tmp3.section_start += shift
                         current_size += shift
                         # correct offset of LOAD PHDRs after inserting PHDR table
-                        current_fragment.fsize += shift
-                        index = ret.segment_list.index(current_fragment)
-                        for tmp4 in ret.segment_list[index + 1:]:
-                            tmp4.offset += shift
-                    current_fragment.fsize = ret.phdr_start + ret.phdr_entries * entry_size - current_fragment.offset
-                    current_fragment.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - current_fragment.vaddr
-                    if index < len(ret.segment_list):
-                        ahead = ret.segment_list[index + 1]
-                        # last memory page with content from the current range
-                        current_page = (current_fragment.vaddr + current_fragment.msize) // PAGESIZE
-                        # first memory page with content from the next range
-                        tmp_page = ahead.vaddr // PAGESIZE
-                        # last file page with content from the current range
-                        current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
-                        # first file page with content from the next range
-                        tmp_filepage = (ahead.offset + ahead.shift) // PAGESIZE
-                        if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
-                            # data of next range will be loaded in the following page as content of current range
-                            # => merge the ranges
-                            current_fragment.fsize = ahead.offset + ahead.shift + ahead.fsize - current_fragment.offset
-                            current_fragment.msize = ahead.vaddr + ahead.msize - current_fragment.vaddr
-                            current_fragment.loadable |= ahead.loadable
-                            current_fragment.flags |= ahead.flags
-                            ret.list_entries -= 1
-                            ret.phdr_entries -= 1
-                            ret.segment_list.remove(ahead)
-                    raise Done()
+                        for frag in ret.segment_list:
+                            if 0 >= frag.offset and 0 + (SIZEOF_ELF32_EHDR if elfclass == ELFCLASS32 else SIZEOF_ELF64_EHDR) == frag.offset + frag.fsize:
+                                frag.fsize += shift
+                                index = ret.segment_list.index(frag)
+                                for tmp4 in ret.segment_list[index:]:
+                                    tmp4.offset += shift
+                                if index < len(ret.segment_list):
+                                    ahead_frag = ret.segment_list[index + 1]
+                                    # last memory page with content from the current range
+                                    current_page = (frag.vaddr + frag.msize) // PAGESIZE
+                                    # first memory page with content from the next range
+                                    tmp_page = ahead_frag.vaddr // PAGESIZE
+                                    # last file page with content from the current range
+                                    current_filepage = (frag.offset + frag.fsize) // PAGESIZE
+                                    # first file page with content from the next range
+                                    tmp_filepage = (ahead_frag.offset + ahead_frag.shift) // PAGESIZE
+                                    if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
+                                        # data of next range will be loaded in the following page as content of current range
+                                        # => merge the ranges
+                                        frag.fsize = ahead_frag.offset + ahead_frag.shift + ahead_frag.fsize - frag.offset
+                                        frag.msize = ahead_frag.vaddr + ahead_frag.msize - frag.vaddr
+                                        frag.loadable |= ahead_frag.loadable
+                                        frag.flags |= ahead_frag.flags
+                                        ret.list_entries -= 1
+                                        ret.phdr_entries -= 1
+                                        ret.segment_list.remove(ahead_frag)
+                                break
+                    raise Done
+            else:
+                current_fragment = ret.segments[i][-1]
+                ahead = ret.segments[i + 1][0]
+                if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
+                    ret.phdr_start = phdr_start
+                    ret.phdr_vaddr = phdr_vaddr
+                    ret.phdr_entries = ret.list_entries
+                    if ahead.offset + ahead.shift < ret.phdr_start + ret.phdr_entries * entry_size:
+                        shift = roundUp(ret.phdr_start + ret.phdr_entries * entry_size - (ahead.offset + ahead.shift),
+                                        PAGESIZE)
+                        for j in range(i + 1, size):
+                            for tmp3 in ret.segments[j]:
+                                tmp3.shift += shift
+                                tmp3.section_start += shift
+                        current_size += shift
+                        # correct offset of LOAD PHDRs after inserting PHDR table
+                        for frag in ret.segment_list:
+                            if current_fragment.offset >= frag.offset and current_fragment.offset + current_fragment.fsize == frag.offset + frag.fsize:
+                                frag.fsize += shift
+                                index = ret.segment_list.index(frag)
+                                for tmp4 in ret.segment_list[index:]:
+                                    tmp4.offset += shift
+                                if index < len(ret.segment_list):
+                                    ahead_frag = ret.segment_list[index + 1]
+                                    # last memory page with content from the current range
+                                    current_page = (frag.vaddr + frag.msize) // PAGESIZE
+                                    # first memory page with content from the next range
+                                    tmp_page = ahead_frag.vaddr // PAGESIZE
+                                    # last file page with content from the current range
+                                    current_filepage = (frag.offset + frag.fsize) // PAGESIZE
+                                    # first file page with content from the next range
+                                    tmp_filepage = (ahead_frag.offset + ahead_frag.shift) // PAGESIZE
+                                    if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
+                                        # data of next range will be loaded in the following page as content of current range
+                                        # => merge the ranges
+                                        frag.fsize = ahead_frag.offset + ahead_frag.shift + ahead_frag.fsize - frag.offset
+                                        frag.msize = ahead_frag.vaddr + ahead_frag.msize - frag.vaddr
+                                        frag.loadable |= ahead_frag.loadable
+                                        frag.flags |= ahead_frag.flags
+                                        ret.list_entries -= 1
+                                        ret.phdr_entries -= 1
+                                        ret.segment_list.remove(ahead_frag)
+                                break
+                    else:
+                        for frag in ret.segment_list:
+                            if current_fragment.offset + current_fragment.shift >= frag.offset and current_fragment.offset + current_fragment.shift + current_fragment.fsize == frag.offset + frag.fsize:
+                                frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
+                                frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
+                                index = ret.segment_list.index(frag)
+                                if index < len(ret.segment_list):
+                                    ahead_frag = ret.segment_list[index + 1]
+                                    # last memory page with content from the current range
+                                    current_page = (frag.vaddr + frag.msize) // PAGESIZE
+                                    # first memory page with content from the next range
+                                    tmp_page = ahead_frag.vaddr // PAGESIZE
+                                    # last file page with content from the current range
+                                    current_filepage = (frag.offset + frag.fsize) // PAGESIZE
+                                    # first file page with content from the next range
+                                    tmp_filepage = (ahead_frag.offset + ahead_frag.shift) // PAGESIZE
+                                    if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
+                                        # data of next range will be loaded in the following page as content of current range
+                                        # => merge the ranges
+                                        frag.fsize = ahead_frag.offset + ahead_frag.shift + ahead_frag.fsize - frag.offset
+                                        frag.msize = ahead_frag.vaddr + ahead_frag.msize - frag.vaddr
+                                        frag.loadable |= ahead_frag.loadable
+                                        frag.flags |= ahead_frag.flags
+                                        ret.list_entries -= 1
+                                        ret.phdr_entries -= 1
+                                        ret.segment_list.remove(ahead_frag)
+                                break
+                    raise Done
     finally:
         calculateShift(ranges_13, ret.segments)
         # determine start of SHDR table
