@@ -343,14 +343,13 @@ def roundUp(value: int, base: int) -> int:
         return value
 
 
-# FIXME: Doku
-# \brief Checks if a [address range](@ref segmentRange) contains a [data range](@ref range)
-#
-# \param segment The address range
-# \param range The data range
-#
-# \return Value indicating if the address range contains the data range
 def contains(segment: FragmentRange, datarange: FileFragment) -> bool:
+    """ Check if a FragmentRange contains a section fragment.
+
+    :param segment: the FragmentRange
+    :param datarange: the section fragment
+    :return: bool indicating if the FragmentRange contains the section fragment
+    """
     if datarange.section_offset + datarange.end <= segment.offset + segment.fsize:
         if datarange.section_offset + datarange.start >= segment.offset:
             return True
