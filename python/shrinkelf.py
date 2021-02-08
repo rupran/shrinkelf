@@ -356,14 +356,12 @@ def contains(segment: FragmentRange, datarange: FileFragment) -> bool:
     return False
 
 
-# FIXME: Doku
-# \brief Computes the section and data shift of all [data ranges](@ref range) from the shift of the [address range]
-#        (@ref segmentRange)
-#
-# \param ranges Array of list of [data ranges](@ref range)
-# \param segments Array of list of [address ranges](@ref segmentRange)
-# \param size Size of these arrays
 def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[FragmentRange]]):
+    """ Compute the section and fragment shift of all FileFragments.
+
+    :param ranges_07: the FileFragments
+    :param segments_17: the FragmentRanges defining the shift
+    """
     for i in range(1, len(ranges_07)):
         for tmp_21 in segments_17[i]:
             for tmpSec in ranges_07[i]:
