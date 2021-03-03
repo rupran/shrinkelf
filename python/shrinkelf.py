@@ -2,6 +2,7 @@
 
 import argparse
 import os
+import time
 from sys import stderr
 from typing import Optional, Tuple, Dict
 
@@ -40,6 +41,10 @@ cu = CleanUp(0, 0)
 
 class Done(Exception):
     """ Exception used for managing control flow. """
+    pass
+
+
+class EndOfSegmentException(Exception):
     pass
 
 
@@ -356,6 +361,19 @@ def contains(segment: FragmentRange, datarange: FileFragment) -> bool:
     return False
 
 
+def containsSegment(outer: FragmentRange, inner: FragmentRange) -> bool:
+    """ Check if a FragmentRange contains another.
+
+    :param outer: the containing FragmentRange
+    :param inner: the contained FragmentRange
+    :return: bool indicating if the FragmentRange contains the section fragment
+    """
+    if inner.offset + inner.fsize <= outer.offset + outer.fsize:
+        if inner.offset >= outer.offset:
+            return True
+    return False
+
+
 def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[FragmentRange]]):
     """ Compute the section and fragment shift of all FileFragments.
 
@@ -454,7 +472,6 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         d: Dict[Tuple[int, int], int] = {}
         for i in range(size):
             a = segments_37[i]
-            # TODO: motivation?
             a_start = calculateOffset(a.offset, current_size) - current_size + a.fsize
             for j in range(size):
                 if i == j:
@@ -759,6 +776,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 current_fragment.flags = tmp_113.flags
                 current_fragment.loadable = tmp_113.loadable
     # insert PHDR table
+    i = 0
     try:
         for i in range(0, size):
             # determine which start addresses the PHDR table would have if it were inserted after section i (i == 0
@@ -771,6 +789,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 fileoffset = tmp.offset + tmp.fsize + tmp.shift
                 memoryoffset = tmp.vaddr + tmp.msize
                 phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
+            # check if PHDR table is in the first segment
+            if not containsSegment(ret.segment_list[0], tmp):
+                raise EndOfSegmentException()
             # check if PHDR table fits in the space in memory after section i
             if i == size - 1:
                 # insert after all sections
@@ -799,9 +820,10 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                         # correct offset of LOAD PHDRs after inserting PHDR table
                         for frag in ret.segment_list:
                             if 0 >= frag.offset and 0 + (SIZEOF_ELF32_EHDR if elfclass == ELFCLASS32 else SIZEOF_ELF64_EHDR) == frag.offset + frag.fsize:
-                                frag.fsize += shift
+                                frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
+                                frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
                                 index = ret.segment_list.index(frag)
-                                for tmp4 in ret.segment_list[index:]:
+                                for tmp4 in ret.segment_list[index + 1:]:
                                     tmp4.offset += shift
                                 if index < len(ret.segment_list):
                                     ahead_frag = ret.segment_list[index + 1]
@@ -843,9 +865,10 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                         # correct offset of LOAD PHDRs after inserting PHDR table
                         for frag in ret.segment_list:
                             if current_fragment.offset >= frag.offset and current_fragment.offset + current_fragment.fsize == frag.offset + frag.fsize:
-                                frag.fsize += shift
+                                frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
+                                frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
                                 index = ret.segment_list.index(frag)
-                                for tmp4 in ret.segment_list[index:]:
+                                for tmp4 in ret.segment_list[index + 1:]:
                                     tmp4.offset += shift
                                 if index < len(ret.segment_list):
                                     ahead_frag = ret.segment_list[index + 1]
@@ -896,6 +919,83 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                                         ret.segment_list.remove(ahead_frag)
                                 break
                     raise Done
+    except EndOfSegmentException:
+        ret.phdr_in_section = i
+        for k in range(0, len(ret.segments[i])):
+            frag = ret.segment_list[0]
+            if not containsSegment(frag, ret.segments[i][k]):
+                # append to segment k - 1
+                current_fragment = ret.segments[i][k - 1]
+                ahead = ret.segments[i][k]
+                fileoffset = current_fragment.offset + current_fragment.fsize + current_fragment.shift
+                memoryoffset = current_fragment.vaddr + current_fragment.msize
+                phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
+                if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
+                    ret.phdr_start = phdr_start
+                    ret.phdr_vaddr = phdr_vaddr
+                    ret.phdr_entries = ret.list_entries
+                    if ahead.offset + ahead.shift < ret.phdr_start + ret.phdr_entries * entry_size:
+                        shift = roundUp(ret.phdr_start + ret.phdr_entries * entry_size - (ahead.offset + ahead.shift),
+                                        PAGESIZE)
+                        for j in range(k, len(ret.segments[i])):
+                            tmp3 = ret.segments[i][k]
+                            tmp3.shift += shift
+                        for j in range(i + 1, size):
+                            for tmp3 in ret.segments[j]:
+                                tmp3.shift += shift
+                                tmp3.section_start += shift
+                        current_size += shift
+                        # correct offset of LOAD PHDRs after inserting PHDR table
+                        if current_fragment.offset >= frag.offset and current_fragment.offset + current_fragment.fsize == frag.offset + frag.fsize:
+                            frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
+                            frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
+                            for tmp4 in ret.segment_list[1:]:
+                                tmp4.offset += shift
+                            ahead_frag = ret.segment_list[1]
+                            # last memory page with content from the current range
+                            current_page = (frag.vaddr + frag.msize) // PAGESIZE
+                            # first memory page with content from the next range
+                            tmp_page = ahead_frag.vaddr // PAGESIZE
+                            # last file page with content from the current range
+                            current_filepage = (frag.offset + frag.fsize) // PAGESIZE
+                            # first file page with content from the next range
+                            tmp_filepage = (ahead_frag.offset + ahead_frag.shift) // PAGESIZE
+                            if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
+                                # data of next range will be loaded in the following page as content of current range
+                                # => merge the ranges
+                                frag.fsize = ahead_frag.offset + ahead_frag.shift + ahead_frag.fsize - frag.offset
+                                frag.msize = ahead_frag.vaddr + ahead_frag.msize - frag.vaddr
+                                frag.loadable |= ahead_frag.loadable
+                                frag.flags |= ahead_frag.flags
+                                ret.list_entries -= 1
+                                ret.phdr_entries -= 1
+                                ret.segment_list.remove(ahead_frag)
+                            break
+                    else:
+                        if current_fragment.offset + current_fragment.shift >= frag.offset and current_fragment.offset + current_fragment.shift + current_fragment.fsize == frag.offset + frag.fsize:
+                            frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
+                            frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
+                            ahead_frag = ret.segment_list[1]
+                            # last memory page with content from the current range
+                            current_page = (frag.vaddr + frag.msize) // PAGESIZE
+                            # first memory page with content from the next range
+                            tmp_page = ahead_frag.vaddr // PAGESIZE
+                            # last file page with content from the current range
+                            current_filepage = (frag.offset + frag.fsize) // PAGESIZE
+                            # first file page with content from the next range
+                            tmp_filepage = (ahead_frag.offset + ahead_frag.shift) // PAGESIZE
+                            if current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage:
+                                # data of next range will be loaded in the following page as content of current range
+                                # => merge the ranges
+                                frag.fsize = ahead_frag.offset + ahead_frag.shift + ahead_frag.fsize - frag.offset
+                                frag.msize = ahead_frag.vaddr + ahead_frag.msize - frag.vaddr
+                                frag.loadable |= ahead_frag.loadable
+                                frag.flags |= ahead_frag.flags
+                                ret.list_entries -= 1
+                                ret.phdr_entries -= 1
+                                ret.segment_list.remove(ahead_frag)
+                        break
+        # TODO: case that first segment contains whole .text section and PHDR table is pushed to the end of the .text section
     finally:
         calculateShift(ranges_13, ret.segments)
         # determine start of SHDR table
@@ -1316,6 +1416,30 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                     item_01.d_version = srcdata.d_version
                     item_01.d_type = srcdata.d_type
                 srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
+            if i == desc.phdr_in_section:
+                phdr_frag = FileFragment()
+                # TODO: different ELF architectures
+                phdrs_type = GElf_Phdr * desc.phdr_entries
+                phdrs = phdrs_type()
+                memmove(addressof(phdrs[0]), dstphdrs, sizeof(phdrs))
+                phdr_frag.section_align = section_ranges[i][0].section_align
+                phdr_frag.section_offset = section_ranges[i][0].section_offset
+                phdr_frag.section_shift = section_ranges[i][0].section_shift
+                phdr_frag.d_type = ELF_T_BYTE.value
+                phdr_frag.d_version = 1
+                phdr_frag.buffer = cast(phdrs, POINTER(c_char))
+                phdr_frag.start = desc.phdr_start - (srcshdr.sh_offset + section_ranges[i][0].section_shift)
+                phdr_frag.end = phdr_frag.start + sizeof(phdrs)
+                phdr_frag.fragment_shift = 0
+                # TODO: different ELF architectures
+                phdr_frag.memory_info = MemoryFragment(start=desc.phdr_vaddr, end=desc.phdr_vaddr + sizeof(phdrs),
+                                                       loadable=True, align=PHDR64ALIGN,
+                                                       flags=section_ranges[i][0].memory_info.flags)
+                section_ranges[i].append(phdr_frag)
+
+                libelf.gelf_newphdr(dste, c_size_t(0))
+                dstehdr.e_phnum = c_uint16(desc.phdr_entries)
+                endian = dstehdr.e_ident[EI_DATA]
             # construct data descriptors of current section
             section_ranges[i].sort(key=lambda item: item.start + item.fragment_shift)
             for item_02 in section_ranges[i]:
@@ -1363,8 +1487,41 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             # noinspection PyUnboundLocalVariable
             libelf.elf_end(dste)
         if cu.level >= 3:
+            # TODO: other ELF architectures
             # noinspection PyUnboundLocalVariable
-            os.close(dstfd)
+            if desc.phdr_in_section > 0:
+                os.fsync(dstfd)
+                while os.fstat(dstfd).st_size < 0x100:
+                    time.sleep(0.01)
+                os.close(dstfd)
+                phnum_upper_half = bytes([desc.phdr_entries // 256])
+                phnum_lower_half = bytes([desc.phdr_entries % 256])
+                phentsize_upper_half = bytes([SIZEOF_ELF64_PHDR // 256])
+                phentsize_lower_half = bytes([SIZEOF_ELF64_PHDR % 256])
+                with open(output_file, mode="r+b") as f:
+                    # noinspection PyUnboundLocalVariable
+                    if endian == 1:
+                        # LSB case
+                        f.seek(0x38)
+                        f.write(phnum_lower_half)
+                        f.seek(0x39)
+                        f.write(phnum_upper_half)
+                        f.seek(0x36)
+                        f.write(phentsize_lower_half)
+                        f.seek(0x37)
+                        f.write(phentsize_upper_half)
+                    elif endian == 2:
+                        f.seek(0x39)
+                        f.write(phnum_lower_half)
+                        f.seek(0x38)
+                        f.write(phnum_upper_half)
+                        f.seek(0x37)
+                        f.write(phentsize_lower_half)
+                        f.seek(0x36)
+                        f.write(phentsize_upper_half)
+            else:
+                # noinspection PyUnboundLocalVariable
+                os.close(dstfd)
         if cu.level >= 2:
             # noinspection PyUnboundLocalVariable
             libelf.elf_end(srce)
