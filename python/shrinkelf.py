@@ -552,7 +552,11 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 # Fixme: Doku
 def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name, log):
     for i in range(1, len(segments_36)):
-        fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
+        if i == 1:
+            fix_first = 0 == segments_36[i][0].offset // PAGESIZE
+        else:
+            fix_first = segments_36[i-1][-1].fsize > 0 and (segments_36[i-1][-1].vaddr + segments_36[i-1][-1].msize) // PAGESIZE == (segments_36[i][0].vaddr + segments_36[i][0].msize) // PAGESIZE
+        # fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_36) - 1:
             last = segments_36[i][-1]
@@ -653,7 +657,11 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
 # Fixme: Doku
 def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> int:
     for i in range(1, len(segments_13)):
-        fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
+        if i == 1:
+            fix_first = 0 == segments_13[i][0].offset // PAGESIZE
+        else:
+            fix_first = segments_13[i-1][-1].fsize > 0 and (segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == (segments_13[i][0].vaddr + segments_13[i][0].msize) // PAGESIZE
+        # fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_13) - 1:
             last = segments_13[i][-1]
