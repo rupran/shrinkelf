@@ -555,7 +555,7 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file
         if i == 1:
             fix_first = 0 == segments_36[i][0].offset // PAGESIZE
         else:
-            fix_first = segments_36[i-1][-1].fsize > 0 and (segments_36[i-1][-1].vaddr + segments_36[i-1][-1].msize) // PAGESIZE == (segments_36[i][0].vaddr + segments_36[i][0].msize) // PAGESIZE
+            fix_first = segments_36[i-1][-1].fsize > 0 and (segments_36[i-1][-1].vaddr + segments_36[i-1][-1].msize) // PAGESIZE == segments_36[i][0].vaddr // PAGESIZE
         # fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_36) - 1:
@@ -660,7 +660,7 @@ def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> 
         if i == 1:
             fix_first = 0 == segments_13[i][0].offset // PAGESIZE
         else:
-            fix_first = segments_13[i-1][-1].fsize > 0 and (segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == (segments_13[i][0].vaddr + segments_13[i][0].msize) // PAGESIZE
+            fix_first = segments_13[i-1][-1].fsize > 0 and (segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == segments_13[i][0].vaddr // PAGESIZE
         # fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_13) - 1:
@@ -1497,7 +1497,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         if cu.level >= 3:
             # TODO: other ELF architectures
             # noinspection PyUnboundLocalVariable
-            if desc.phdr_in_section > 0:
+            if cu.exitstatus == 0 and desc.phdr_in_section > 0:
                 os.fsync(dstfd)
                 while os.fstat(dstfd).st_size < 0x100:
                     time.sleep(0.01)
