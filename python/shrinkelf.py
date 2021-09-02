@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import copy
 import os
 import time
 from sys import stderr
@@ -600,14 +601,14 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         p = z3.IntVector("p", len(section))
         end_13 = z3.Int("end")
         start_13 = z3.Int("start")
-        optimizer = z3.Optimize()
+        optimizer = z3.SolverFor('QF_LIA')
         z3.set_param("parallel.enable", True)
         end_terms = []
         start_terms = []
         # constraints
         for i in range(len(section)):
             # fragments can't overlap
-            for j in range(len(section)):
+            for j in range(i + 1, len(section)):
                 if i == j:
                     continue
                 optimizer.add(z3.Or(p[j] * PAGESIZE + smt_constants[j][0] + smt_constants[j][1] <= p[i] * PAGESIZE + smt_constants[i][0],
@@ -639,19 +640,35 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         if fix_last:
             # last range must come last in file
             for i in range(len(section) - 1):
-                optimizer.add(p[-1] * PAGESIZE + smt_constants[-1][0] + smt_constants[-1][1]
-                              > p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1])
-        # minimize end of this section
-        optimizer.minimize(end_13)
-        res = optimizer.check()
-        if res != z3.sat:
+                optimizer.add((p[len(section) - 1] * PAGESIZE + smt_constants[-1][0]) + smt_constants[-1][1]
+                              > (p[i] * PAGESIZE + smt_constants[i][0]) + smt_constants[i][1])
+
+        last_model = None
+        cur_end = section[-1].offset + section[-1].fsize
+        while True:
+            res = optimizer.check(end_13 < cur_end)
+            if res != z3.sat:
+                break
+            model = optimizer.model()
+            terms = []
+            for i in range(len(section)):
+                terms.append(p[i] == model[p[i]])
+            res = optimizer.check(z3.And(terms))
+            if res != z3.sat:
+                break
+            else:
+                last_model = copy.deepcopy(model)
+            cur_end = model[end_13].as_long()
+
+        if last_model is None:
             print_error("Z3 could not find a solution for section {0}".format(index))
             raise cu
-        model = optimizer.model()
-        for i in range(len(section)):
-            section[i].section_start = model[start_13].as_long()
-            section[i].shift = (model.eval(p[i] * PAGESIZE + smt_constants[i][0])).as_long() - section[i].offset
-        return model[end_13].as_long()
+        else:
+            for i in range(len(section)):
+                section[i].section_start = last_model[start_13].as_long()
+                section[i].shift = (last_model.eval(p[i] * PAGESIZE + smt_constants[i][0])).as_long() - section[i].offset
+
+        return last_model[end_13].as_long()
 
 
 # Fixme: Doku
@@ -660,7 +677,7 @@ def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> 
         if i == 1:
             fix_first = 0 == segments_13[i][0].offset // PAGESIZE
         else:
-            fix_first = segments_13[i-1][-1].fsize > 0 and (segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == segments_13[i][0].vaddr // PAGESIZE
+            fix_first = segments_13[i-1][-1].fsize > 0 and ((segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == segments_13[i][0].vaddr // PAGESIZE)
         # fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
         fix_last = False
         if i != len(segments_13) - 1:
