@@ -598,6 +598,12 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         smt_constants = []
         for fragment in section:
             smt_constants.append(fragment.get_smt_constants())
+
+        # Workaround for invalid models with the new solver
+        z3.set_option("smt.arith.solver","2")
+        z3.set_option("smt.auto_config","false")
+        z3.set_option("smt.relevancy","0")
+
         p = z3.IntVector("p", len(section))
         end_13 = z3.Int("end")
         start_13 = z3.Int("start")
