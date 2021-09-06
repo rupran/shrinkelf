@@ -662,10 +662,18 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         last_model = None
         cur_end = section[-1].offset + section[-1].fsize
         while True:
-            res = optimizer.check(end_13 < cur_end)
+            # Check for a smaller possible value of 'end', pin start and all
+            # p[i] * PAGESIZE to be smaller than the current end
+            terms = [end_13 < cur_end, start_13 < cur_end]
+            for i in range(len(section)):
+                terms.append(p[i] <= cur_end // PAGESIZE)
+
+            res = optimizer.check(z3.And(terms))
             if res != z3.sat:
                 break
             model = optimizer.model()
+
+            # This check is only required if the first check is considered buggy
             terms = []
             for i in range(len(section)):
                 terms.append(p[i] == model[p[i]])
@@ -674,6 +682,7 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
                 break
             else:
                 last_model = copy.deepcopy(model)
+            # ... until here.
             cur_end = model[end_13].as_long()
 
         if last_model is None:
