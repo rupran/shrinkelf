@@ -493,9 +493,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             m.setAttr("ModelSense", GRB.MINIMIZE)
             # number of connections between fragments. It is size-1 because every fragment has a successor except the
             # last one
-            m.addConstr(gp.quicksum(x), rhs=size-1, sense=GRB.EQUAL, name="frag")
+            m.addLConstr(gp.quicksum(x), rhs=size-1, sense=GRB.EQUAL, name="frag")
             # there is exactly one last/first fragment pair
-            m.addConstr(gp.quicksum(y), rhs=1, sense=GRB.EQUAL, name="ring")
+            m.addLConstr(gp.quicksum(y), rhs=1, sense=GRB.EQUAL, name="ring")
             # there is exactly one 'connection' leaving a fragment: either to its successor or it is the last fragment
             # and so it 'connects' to the first
             m.addConstrs(((x.sum(j, '*') + y.sum(j, '*')) == 1 for j in range(size)), "out")
@@ -507,11 +507,11 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             if fix_first:
                 # keep first fragment of the section in its place because it will be loaded in the same page as the end of
                 # the previous section
-                m.addConstr(y.sum('*', 0) == 1, "fix_first_fragment")
+                m.addLConstr(y.sum('*', 0) == 1, "fix_first_fragment")
             if fix_last:
                 # keep last fragment of the section in its place because it will be loaded in the same page as the start of
                 # the next section
-                m.addConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
+                m.addLConstr(y.sum(size - 1, '*') == 1, "fix_last_fragment")
 
             m._xvars = x
             m._yvars = y
@@ -520,7 +520,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             m.optimize(subtourelim)
             # m.optimize()
             if m.status != GRB.OPTIMAL:
-                print_error("Unable to solve smt instance for section " + str(index))
+                print_error("Unable to solve ILP instance for section " + str(index))
                 raise cu
 
             current_fragment_index: int = -1
@@ -605,25 +605,35 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         z3.set_param("parallel.enable", True)
         end_terms = []
         start_terms = []
+        # The start must be after the current end of file
+        optimizer.add(start_13 >= current_size)
+        # start must stay smaller than the end of this section
+        optimizer.add(start_13 < end_13)
         # constraints
         for i in range(len(section)):
+            # All fragments must start after the current end of file
+            optimizer.add(p[i] >= current_size // PAGESIZE)
+            start_i = smt_constants[i][0]
+            end_i = start_i + smt_constants[i][1]
             # fragments can't overlap
             for j in range(i + 1, len(section)):
                 if i == j:
                     continue
-                optimizer.add(z3.Or(p[j] * PAGESIZE + smt_constants[j][0] + smt_constants[j][1] <= p[i] * PAGESIZE + smt_constants[i][0],
-                                    p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= p[j] * PAGESIZE + smt_constants[j][0]
+                start_j = smt_constants[j][0]
+                end_j = start_j + smt_constants[j][1]
+                optimizer.add(z3.Or(p[j] * PAGESIZE + end_j <= p[i] * PAGESIZE + start_i,
+                                    p[i] * PAGESIZE + end_i <= p[j] * PAGESIZE + start_j
                                     ))
             # fragments can only be placed after the current end of file
-            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= current_size)
+            optimizer.add(p[i] * PAGESIZE + start_i >= current_size)
             # variable "end" shall point after all fragments
-            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] <= end_13)
+            optimizer.add(p[i] * PAGESIZE + end_i <= end_13)
             # variable "end" shall point at the end of the last fragment
-            end_terms.append(p[i] * PAGESIZE + smt_constants[i][0] + smt_constants[i][1] == end_13)
+            end_terms.append(p[i] * PAGESIZE + end_i == end_13)
             # variable "start" shall point before all fragments
-            optimizer.add(p[i] * PAGESIZE + smt_constants[i][0] >= start_13)
+            optimizer.add(p[i] * PAGESIZE + start_i >= start_13)
             # variable "start" shall point at the start of the first fragment
-            start_terms.append(p[i] * PAGESIZE + smt_constants[i][0] == start_13)
+            start_terms.append(p[i] * PAGESIZE + start_i == start_13)
         optimizer.add(z3.Or(end_terms))
         optimizer.add(z3.Or(start_terms))
         # xxx: mehr als das erste bzw. letzte Fragment fixieren, für kleine Fragmente
