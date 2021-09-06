@@ -813,7 +813,10 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 current_fragment.msize = tmp_113.vaddr + tmp_113.msize - current_fragment.vaddr
                 current_fragment.loadable |= tmp_113.loadable
                 current_fragment.flags |= tmp_113.flags
-                ret.list_entries -= 1
+                # If we're in a loadable fragment, we can reduce the number of
+                # PHDR entries by one due to this merge
+                if current_fragment.loadable:
+                    ret.list_entries -= 1
             else:
                 # data of tmp_113 range will be loaded in a page farther away from the content of current range
                 # => create new ranges
@@ -825,6 +828,14 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 current_fragment.msize = tmp_113.msize
                 current_fragment.flags = tmp_113.flags
                 current_fragment.loadable = tmp_113.loadable
+
+    # If the last fragment is completely unloadable, we need one less entry
+    # for the PHDR table, otherwise we need to add this fragment to the list
+    if not current_fragment.loadable:
+        ret.list_entries -= 1
+    else:
+        ret.segment_list.append(current_fragment)
+
     # insert PHDR table
     i = 0
     try:
@@ -1427,6 +1438,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                 raise cu
             # allocate buffers for the data of the output file
             for tmp_89 in section_ranges[i]:
+                if tmp_89.size() == 0:
+                    continue
                 tmp_89.buffer = create_string_buffer(tmp_89.size())
             # current data of current section of input file
             srcdata_pointer: POINTER(Elf_Data) = libelf.elf_getdata(srcscn, None)
@@ -1440,6 +1453,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                 srcdata_begin: int = srcdata.d_off
                 srcdata_end = srcdata.d_off + srcdata.d_size
                 for item_01 in section_ranges[i]:
+                    if item_01.size() == 0:
+                        continue
                     if item_01.end <= srcdata_begin:
                         # source data begins after range ends
                         srcdata_pointer = libelf.elf_getdata(srcscn, srcdata_pointer)
@@ -1493,6 +1508,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             # construct data descriptors of current section
             section_ranges[i].sort(key=lambda item: item.start + item.fragment_shift)
             for item_02 in section_ranges[i]:
+                if item_02.buffer is None:
+                    continue
                 dstdata_pointer: POINTER(Elf_Data) = libelf.elf_newdata(dstscn)
                 if not dstdata_pointer:
                     print_error("Could not add data to section {0} of output file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
