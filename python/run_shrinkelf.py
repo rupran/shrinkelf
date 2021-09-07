@@ -37,13 +37,10 @@ for library in store.get_library_objects():
     bname = os.path.basename(file_to_tailor)
     out_file = os.path.join(output_dir, bname)
 
-    parameter_file = 'func_offset_parameters_{}'.format(bname)
-    parameter_list = []
-    with open(parameter_file, 'r') as infd:
-        for line in infd:
-            parameter_list.extend(line.strip().split())
+    keep_file = 'keep_file_{}'.format(bname)
 
-    command_list = [shrinkelf, *parameter_list, '-o', out_file, *solver_parameters, file_to_tailor]
+    command_list = [shrinkelf, '-K', keep_file, '-o', out_file,
+                    *solver_parameters, file_to_tailor]
     print('Running shrinkelf on {}'.format(bname))
     time_before = time.time()
     res = subprocess.run(command_list)
@@ -64,8 +61,13 @@ with open(stats_file, 'r') as fd:
         filename = os.path.basename(line.split(',')[0])
         full_path = os.path.join(output_dir, filename)
         if os.path.isfile(full_path):
-            lines[idx] += ',{},{}'.format(os.stat(full_path).st_size,
-                                          run_times[full_path])
+            if full_path not in run_times:
+                print('WARNING: no run times for {}'.format(filename))
+                lines[idx] += ',0,0'
+                continue
+            else:
+                lines[idx] += ',{},{}'.format(os.stat(full_path).st_size,
+                                            run_times[full_path])
         else:
             print('WARNING: no shrunk file for {}'.format(filename))
             lines[idx] += ',{},{}'.format(0, 0)
