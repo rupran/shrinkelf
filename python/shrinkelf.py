@@ -539,6 +539,14 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             assert sequence[-1] == last_fragment_index, "does not include all fragments"
             current_fragment = segments_37[sequence[0]]
             section_start = calculateOffset(current_fragment.offset, current_size)
+            if fix_first:
+                # If the first fragment inside the current section already
+                # starts at an offset to the original section start, account
+                # for this offset by moving the section start back
+                first = segments_37[0]
+                first_offset_into_section = calculateOffset(first.offset, first.section_start) - first.section_start
+                if first_offset_into_section > 0:
+                    section_start -= first_offset_into_section
             for fragment in sequence:
                 current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
