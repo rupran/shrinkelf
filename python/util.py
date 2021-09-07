@@ -124,6 +124,9 @@ class FileFragment:
 
         return self.end - self.start
 
+    def __lt__(self, other):
+        return self.start < other.start
+
 
 class FragmentRange:
     """

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import argparse
+import bisect
 import copy
 import os
 import time
@@ -65,15 +66,26 @@ def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) 
         list_of_items.append(item_03)
         return None
     else:
-        for i in range(0, length_01):
-            current_item = list_of_items[i]
-            if item_03[1] < current_item[0]:
+        idx = bisect.bisect(list_of_items, item_03)
+        if idx != length_01:
+            next_item = list_of_items[idx + 1]
+            if item_03[1] < next_item[0]:
                 # item must be sorted in before current element
-                list_of_items.insert(i, item_03)
-                return None
-            elif item_03[0] <= current_item[1]:
+                list_of_items.insert(idx, item_03)
+        if idx > 0:
+            prev_item = list_of_items[idx - 1]
+            if item_03[0] <= prev_item[1]:
                 # item overlaps with current element
                 return current_item
+#        for i in range(0, length_01):
+#            current_item = list_of_items[i]
+#            if item_03[1] < current_item[0]:
+#                # item must be sorted in before current element
+#                list_of_items.insert(i, item_03)
+#                return None
+#            elif item_03[0] <= current_item[1]:
+#                # item overlaps with current element
+#                return current_item
         list_of_items.append(item_03)
         return None
 
@@ -89,15 +101,27 @@ def insertRange(item_04: FileFragment, list_of_items: List[FileFragment]) -> Opt
         list_of_items.append(item_04)
         return None
     else:
-        for i in range(0, length_02):
-            current_item = list_of_items[i]
-            if item_04.end < current_item.start:
-                # item must be sorted in before current element
-                list_of_items.insert(i, item_04)
+        idx = bisect.bisect(list_of_items, item_04)
+        if idx != length_02:
+            next_item = list_of_items[idx + 1]
+            if item_04.end < next_item.start:
+                # item must be sorted in before next element
+                list_of_items.insert(idx, item_04)
                 return None
-            elif item_04.start <= current_item.end:
-                # item overlaps with current element
-                return current_item
+        if idx > 0:
+            prev_item = list_of_items[idx - 1]
+            if item_04.start <= prev_item.end:
+                # item overlaps with previous element
+                return prev_item
+        #for i in range(0, length_02):
+        #    current_item = list_of_items[i]
+        #    if item_04.end < current_item.start:
+        #        # item must be sorted in before current element
+        #        list_of_items.insert(i, item_04)
+        #        return None
+        #    elif item_04.start <= current_item.end:
+        #        # item overlaps with current element
+        #        return current_item
         list_of_items.append(item_04)
         return None
 
