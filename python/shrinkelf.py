@@ -994,12 +994,18 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             frag = ret.segment_list[0]
             if not containsSegment(frag, ret.segments[i][k]):
                 # append to segment k - 1
-                current_fragment = ret.segments[i][k - 1]
+                if k == 0:
+                    current_fragment = ret.segments[i-1][-1]
+                    ret.phdr_in_section = i-1
+                else:
+                    current_fragment = ret.segments[i][k - 1]
                 ahead = ret.segments[i][k]
                 fileoffset = current_fragment.offset + current_fragment.fsize + current_fragment.shift
                 memoryoffset = current_fragment.vaddr + current_fragment.msize
                 phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
                 if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
+                    # If we find enough space before 'ahead', let's add the
+                    # program header right here
                     ret.phdr_start = phdr_start
                     ret.phdr_vaddr = phdr_vaddr
                     ret.phdr_entries = ret.list_entries
@@ -1064,6 +1070,35 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                                 ret.phdr_entries -= 1
                                 ret.segment_list.remove(ahead_frag)
                         break
+                else:
+                    # In this case, we did not find a space for the PHDR before
+                    # the next segment ahead. Due to this, we need to move all
+                    # following segments up by 'shift' to make enough space in
+                    # order to attach the program header to the current segment
+                    shift = roundUp(phdr_start + ret.list_entries * entry_size - (ahead.offset + ahead.shift),
+                                    PAGESIZE)
+                    if k == 0:
+                        # we attached to the last fragment in previous segment
+                        # => we do not need to fix up any later fragments
+                        pass
+                    else:
+                        # we attached somewhere in the middle => all later
+                        # fragments in the same section need to be shifted
+                        for j in range(k, len(ret.segments[ret.phdr_in_section])):
+                            tmp3 = ret.segments[ret.phdr_in_section][j]
+                            tmp3.shift += shift
+                    # all fragments in other sections need to be shifted as
+                    # well => iterate over all following
+                    for j in range(ret.phdr_in_section + 1, size):
+                        for tmp3 in ret.segments[j]:
+                            tmp3.shift += shift
+                            tmp3.section_start += shift
+                    # Adapt all dependent values and exit
+                    current_size += shift
+                    ret.phdr_entries = ret.list_entries
+                    ret.phdr_start = phdr_start
+                    ret.phdr_vaddr = phdr_vaddr
+                    break
         # TODO: case that first segment contains whole .text section and PHDR table is pushed to the end of the .text section
     finally:
         calculateShift(ranges_13, ret.segments)
