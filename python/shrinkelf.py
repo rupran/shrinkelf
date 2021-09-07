@@ -10,7 +10,6 @@ from typing import Optional, Tuple, Dict
 
 import gurobipy as gp
 from gurobipy import GRB
-import z3
 
 from elfdefinitions import *
 from util import *
@@ -627,6 +626,9 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
             current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
         return current_size
     else:
+        # This import is rather expensive for small files (0.2s) so let's do
+        # it only if it's really required
+        import z3
         smt_constants = []
         for fragment in section:
             smt_constants.append(fragment.get_smt_constants())
