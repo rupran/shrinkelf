@@ -1,7 +1,8 @@
+import os
 from ctypes import *
 
 # path to libelf library
-PATH_TO_LIB = "/home/fabian/Dokumente/Uni/Master/Projekt/mp-shrink-elf/libelf/libelf.so.1"
+PATH_TO_LIB = os.path.dirname(os.path.abspath(__file__)) + "/libelf.so.1"
 # page size to align segment ranges
 PAGESIZE = 0x1000
 # alignment for PHDR table in file (32bit version)
