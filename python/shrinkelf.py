@@ -1099,33 +1099,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                         break
                 else:
                     # In this case, we did not find a space for the PHDR before
-                    # the next segment ahead. Due to this, we need to move all
-                    # following segments up by 'shift' to make enough space in
-                    # order to attach the program header to the current segment
-                    shift = roundUp(phdr_start + ret.list_entries * entry_size - (ahead.offset + ahead.shift),
-                                    PAGESIZE)
-                    if k == 0:
-                        # we attached to the last fragment in previous segment
-                        # => we do not need to fix up any later fragments
-                        pass
-                    else:
-                        # we attached somewhere in the middle => all later
-                        # fragments in the same section need to be shifted
-                        for j in range(k, len(ret.segments[ret.phdr_in_section])):
-                            tmp3 = ret.segments[ret.phdr_in_section][j]
-                            tmp3.shift += shift
-                    # all fragments in other sections need to be shifted as
-                    # well => iterate over all following
-                    for j in range(ret.phdr_in_section + 1, size):
-                        for tmp3 in ret.segments[j]:
-                            tmp3.shift += shift
-                            tmp3.section_start += shift
-                    # Adapt all dependent values and exit
-                    current_size += shift
-                    ret.phdr_entries = ret.list_entries
-                    ret.phdr_start = phdr_start
-                    ret.phdr_vaddr = phdr_vaddr
-                    break
+                    # the next segment ahead. Can we recover from this?
+                    ret.phdr_in_section = -1
+
         # TODO: case that first segment contains whole .text section and PHDR table is pushed to the end of the .text section
     finally:
         calculateShift(ranges_13, ret.segments)
@@ -1419,6 +1395,9 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         loads: int = countLOADs(srce)
         # description of layout of output file
         desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file, log)
+        if desc.phdr_in_section == -1:
+            print_error("Error calculating file layout: no space for PHDRs")
+            raise cu
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
