@@ -802,37 +802,14 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     current_fragment.msize = current_fragment.fsize
     current_fragment.flags = ret.segments[1][0].flags
     current_fragment.loadable = True
+    current_index = 0
     ret.list_entries -= 1
-    for tmp_112 in ret.segments[1][1:len(ret.segments[1])]:
-        # last memory page with content from the current range
-        current_page = (current_fragment.vaddr + current_fragment.msize) // PAGESIZE
-        # first memory page with content from the tmp_112 range
-        tmp_page = tmp_112.vaddr // PAGESIZE
-        # last file page with content from the current range
-        current_filepage = (current_fragment.offset + current_fragment.fsize) // PAGESIZE
-        # first file page with content from the tmp_112 range
-        tmp_filepage = (tmp_112.offset + tmp_112.shift) // PAGESIZE
-        if (current_page == tmp_page and current_filepage == tmp_filepage) or (current_page + 1 == tmp_page and current_filepage + 1 == tmp_filepage):
-            # data of tmp_112 range will be loaded in the same or the following page as content of current range
-            # => merge the ranges
-            current_fragment.fsize = tmp_112.offset + tmp_112.shift + tmp_112.fsize - current_fragment.offset
-            current_fragment.msize = tmp_112.vaddr + tmp_112.msize - current_fragment.vaddr
-            current_fragment.loadable |= tmp_112.loadable
-            current_fragment.flags |= tmp_112.flags
-            ret.list_entries -= 1
+    for i in range(1, size):
+        if i == 1:
+            to_iterate = ret.segments[i][1:]
         else:
-            # data of tmp_112 range will be loaded in a page farther away from the content of current range
-            # => create new ranges
-            ret.segment_list.append(current_fragment)
-            current_fragment = FragmentRange()
-            current_fragment.offset = tmp_112.offset + tmp_112.shift
-            current_fragment.fsize = tmp_112.fsize
-            current_fragment.vaddr = tmp_112.vaddr
-            current_fragment.msize = tmp_112.msize
-            current_fragment.flags = tmp_112.flags
-            current_fragment.loadable = tmp_112.loadable
-    for i in range(2, size):
-        for tmp_113 in ret.segments[i]:
+            to_iterate = ret.segments[i]
+        for tmp_113 in to_iterate:
             # last memory page with content from the current range
             current_page = (current_fragment.vaddr + current_fragment.msize) // PAGESIZE
             # first memory page with content from the tmp_113 range
@@ -856,6 +833,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 # data of tmp_113 range will be loaded in a page farther away from the content of current range
                 # => create new ranges
                 ret.segment_list.append(current_fragment)
+                current_index += 1
                 current_fragment = FragmentRange()
                 current_fragment.offset = tmp_113.offset + tmp_113.shift
                 current_fragment.fsize = tmp_113.fsize
@@ -863,6 +841,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 current_fragment.msize = tmp_113.msize
                 current_fragment.flags = tmp_113.flags
                 current_fragment.loadable = tmp_113.loadable
+            tmp_113.contained_in = current_index
 
     # If the last fragment is completely unloadable, we need one less entry
     # for the PHDR table, otherwise we need to add this fragment to the list

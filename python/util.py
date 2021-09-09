@@ -188,6 +188,7 @@ class FragmentRange:
         self.vaddr = vaddr
         self.shift = shift
         self.section_start = section_start
+        self.contained_in = -1
 
     def end_in_section(self) -> int:
         """ Return end address of range relative to the start address of the containing section. """
