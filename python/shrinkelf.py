@@ -1091,6 +1091,73 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             ret.shdr_start = roundUp(current_size, SHDR64ALIGN)
         return ret
 
+def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges_i, last=False):
+    current_fragment = FileFragment()
+    # determine start and end addresses of section range in file
+    if srcshdr.sh_type == SHT_NOBITS.value:
+        # NOBITS section don't have data in file
+        current_fragment.start = 0
+        current_fragment.end = 0
+    else:
+        # determine start of range under construction relative to the start of its containing section
+        if current_range[0] < srcshdr.sh_offset:
+            # range under construction starts at the beginning of its containing section
+            current_fragment.start = 0
+        else:
+            current_fragment.start = current_range[0] - srcshdr.sh_offset
+        # determine end of range under construction relative to the end of its containing section
+        if last == False and current_range[1] < srcshdr.sh_offset + srcshdr.sh_size:
+            current_fragment.end = current_range[1] - srcshdr.sh_offset
+        else:
+            # range under construction ends at the end of its containing section
+            current_fragment.end = srcshdr.sh_size
+        if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
+            print_error(
+                "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
+                    i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
+                    srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
+            raise cu
+        if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
+            print_error(
+                "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
+                    i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
+                    srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
+            raise cu
+    current_fragment.section_align = srcshdr.sh_addralign
+    current_fragment.section_offset = srcshdr.sh_offset
+    # memory layout of section range
+    for j in range(0, phdrnum.value):
+        srcphdr = GElf_Phdr()
+        if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
+            print_error("Could not retrieve source phdr structure {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+            raise cu
+        if srcphdr.p_type != PT_LOAD.value:
+            # not a loadable segment so it contains no data about the memory layout of any part of the input
+            # file
+            continue
+        offset_02: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
+        offset_segment: int = srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS.value else srcphdr.p_filesz
+        if srcphdr.p_offset >= srcshdr.sh_offset + offset_02 or srcphdr.p_offset + offset_segment <= srcshdr.sh_offset:
+            # loadable segment but does not load this section
+            continue
+        current_fragment.memory_info.loadable = True
+        current_fragment.memory_info.flags = srcphdr.p_flags
+        current_fragment.memory_info.align = srcphdr.p_align
+        if srcshdr.sh_type == SHT_NOBITS.value:
+            # range contains whole NOBITS section
+            current_fragment.memory_info.start = srcshdr.sh_addr
+            current_fragment.memory_info.end = current_fragment.memory_info.start + srcshdr.sh_size
+        else:
+            # determine start and end addresses of section range in memory
+            if srcphdr.p_offset <= srcshdr.sh_offset:
+                # segment starts before section starts
+                current_fragment.memory_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
+            else:
+                # segment starts after section starts
+                current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
+            current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
+        break
+    insertRange(current_fragment, section_ranges_i)
 
 # FIXME: Doku
 # \brief Computes the ranges to keep per section
@@ -1123,137 +1190,12 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
         offset: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
         # split ranges in section ranges and add layout data (ranges that end in section i)
         while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + offset:
-            current_fragment = FileFragment()
-            # determine start and end addresses of section range in file
-            if srcshdr.sh_type == SHT_NOBITS.value:
-                # NOBITS section don't have data in file
-                current_fragment.start = 0
-                current_fragment.end = 0
-            else:
-                # determine start of range under construction relative to the start of its containing section
-                if ranges_27[r][0] < srcshdr.sh_offset:
-                    # range under construction starts at the beginning of its containing section
-                    current_fragment.start = 0
-                else:
-                    current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
-                # determine end of range under construction relative to the end of its containing section
-                if ranges_27[r][1] < srcshdr.sh_offset + srcshdr.sh_size:
-                    current_fragment.end = ranges_27[r][1] - srcshdr.sh_offset
-                else:
-                    # range under construction ends at the end of its containing section
-                    current_fragment.end = srcshdr.sh_size
-                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-                    print_error(
-                        "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
-                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
-                    raise cu
-                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-                    print_error(
-                        "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
-                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
-                    raise cu
-            current_fragment.section_align = srcshdr.sh_addralign
-            current_fragment.section_offset = srcshdr.sh_offset
-            # memory layout of section range
-            for j in range(0, phdrnum.value):
-                srcphdr = GElf_Phdr()
-                if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
-                    print_error("Could not retrieve source phdr structure {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
-                    raise cu
-                if srcphdr.p_type != PT_LOAD.value:
-                    # not a loadable segment so it contains no data about the memory layout of any part of the input
-                    # file
-                    continue
-                offset_02: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
-                offset_segment: int = srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS.value else srcphdr.p_filesz
-                if srcphdr.p_offset >= srcshdr.sh_offset + offset_02 or srcphdr.p_offset + offset_segment <= srcshdr.sh_offset:
-                    # loadable segment but does not load this section
-                    continue
-                current_fragment.memory_info.loadable = True
-                current_fragment.memory_info.flags = srcphdr.p_flags
-                current_fragment.memory_info.align = srcphdr.p_align
-                if srcshdr.sh_type == SHT_NOBITS.value:
-                    # range contains whole NOBITS section
-                    current_fragment.memory_info.start = srcshdr.sh_addr
-                    current_fragment.memory_info.to = current_fragment.memory_info.start + srcshdr.sh_size
-                else:
-                    # determine start and end addresses of section range in memory
-                    if srcphdr.p_offset <= srcshdr.sh_offset:
-                        # segment starts before section starts
-                        current_fragment.memory_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
-                    else:
-                        # segment starts after section starts
-                        current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
-                    current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
-                break
-            insertRange(current_fragment, section_ranges[i])
+            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges[i])
             r += 1
         # split ranges in section ranges and add layout data (range that begins in section i but does not end there)
-        offset_03: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
-        if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset_03:
-            current_fragment = FileFragment()
-            # determine start and end addresses of section range in file
-            if srcshdr.sh_type == SHT_NOBITS.value:
-                # NOBITS section don't have data in file
-                current_fragment.start = 0
-                current_fragment.end = 0
-            else:
-                # determine start of range under construction relative to the start of its containing section
-                if ranges_27[r][0] < srcshdr.sh_offset:
-                    # range under construction starts at the beginning of its containing section
-                    current_fragment.start = 0
-                else:
-                    current_fragment.start = ranges_27[r][0] - srcshdr.sh_offset
-                # range under construction ends at the end of its containing section
-                current_fragment.end = srcshdr.sh_size
-                if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-                    print_error(
-                        "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
-                            srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
-                    raise cu
-                if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-                    print_error(
-                        "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                            i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
-                            srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
-                    raise cu
-            current_fragment.section_align = srcshdr.sh_addralign
-            current_fragment.section_offset = srcshdr.sh_offset
-            # memory layout of section range
-            for j in range(0, phdrnum.value):
-                srcphdr = GElf_Phdr()
-                if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
-                    print_error("Could not retrieve source phdr structure {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
-                    raise cu
-                if srcphdr.p_type != PT_LOAD.value:
-                    # not a loadable segment so it contains no data about the memory layout of any part of the input file
-                    continue
-                offset_04: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
-                offset_segment_02: int = srcphdr.p_memsz if srcshdr.sh_type == SHT_NOBITS.value else srcphdr.p_filesz
-                if srcphdr.p_offset >= srcshdr.sh_offset + offset_04 or srcphdr.p_offset + offset_segment_02 <= srcshdr.sh_offset:
-                    # loadable segment but does not load this section
-                    continue
-                current_fragment.memory_info.loadable = True
-                current_fragment.memory_info.flags = srcphdr.p_flags
-                current_fragment.memory_info.align = srcphdr.p_align
-                if srcshdr.sh_type == SHT_NOBITS.value:
-                    # range contains whole NOBITS section
-                    current_fragment.memory_info.start = srcshdr.sh_addr
-                    current_fragment.memory_info.end = current_fragment.memory_info.start + srcshdr.sh_size
-                else:
-                    # determine start and end addresses of section range in memory
-                    if srcphdr.p_offset <= srcshdr.sh_offset:
-                        # segment starts before section starts
-                        current_fragment.memory_info.start = srcphdr.p_vaddr + srcshdr.sh_offset + current_fragment.start - srcphdr.p_offset
-                    else:
-                        # segment starts after section starts
-                        current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
-                    current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
-                break
-            insertRange(current_fragment, section_ranges[i])
+        if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset:
+            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges[i], last=True)
+
     return section_ranges
 
 
