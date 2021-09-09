@@ -633,6 +633,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         # This import is rather expensive for small files (0.2s) so let's do
         # it only if it's really required
         import z3
+        z3.set_param("parallel.enable", True)
+
         smt_constants = []
         for fragment in section:
             smt_constants.append(fragment.get_smt_constants())
@@ -646,7 +648,8 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
         end_13 = z3.Int("end")
         start_13 = z3.Int("start")
         optimizer = z3.SolverFor('QF_LIA')
-        z3.set_param("parallel.enable", True)
+        # Try to search for a solution for 30 minutes max
+        optimizer.set('timeout', 30 * 60 * 1000)
         end_terms = []
         start_terms = []
         # The start must be after the current end of file
