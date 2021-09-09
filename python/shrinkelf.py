@@ -405,9 +405,12 @@ def calculateShift(ranges_07: List[List[FileFragment]], segments_17: List[List[F
     :param segments_17: the FragmentRanges defining the shift
     """
     for i in range(1, len(ranges_07)):
+        last_idx = 0
         for tmpSec in ranges_07[i]:
-            for tmp_21 in segments_17[i]:
+            for idx_2, tmp_21 in enumerate(segments_17[i][last_idx:], last_idx):
                 if contains(tmp_21, tmpSec):
+                    if idx_2 > last_idx:
+                        last_idx += 1
                     tmpSec.section_shift = tmp_21.section_start - tmpSec.section_offset
                     tmpSec.fragment_shift = tmp_21.shift - tmpSec.section_shift
                     break
