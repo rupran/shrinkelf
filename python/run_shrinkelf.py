@@ -9,15 +9,16 @@ from librarytrader.librarystore import LibraryStore
 
 shrinkelf = '{}/shrinkelf.py'.format(os.path.dirname(sys.argv[0]))
 solver = ''
-solver_parameters = []
-if solver in ('gurobi', 'z3'):
-    solver_parameters = ['-p', solver]
 
 print('Usage: {} <LibraryStore file> <output directory>'.format(os.path.basename(sys.argv[0])))
 store_path = sys.argv[1]
 output_dir = sys.argv[2]
 if len(sys.argv) > 3:
     solver = sys.argv[3]
+
+solver_parameters = []
+if solver in ('gurobi', 'z3'):
+    solver_parameters = ['-p', solver]
 
 store = LibraryStore()
 store.load(store_path)
