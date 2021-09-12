@@ -564,16 +564,14 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             while len(sequence) < size:
                 sequence += [b for a, b in seq if a == sequence[-1]]
             assert sequence[-1] == last_fragment_index, "does not include all fragments"
-            current_fragment = segments_37[sequence[0]]
-            section_start = calculateOffset(current_fragment.offset, current_size)
-            if fix_first:
-                # If the first fragment inside the current section already
-                # starts at an offset to the original section start, account
-                # for this offset by moving the section start back
-                first = segments_37[0]
-                first_offset_into_section = calculateOffset(first.offset, first.section_start) - first.section_start
-                if first_offset_into_section > 0:
-                    section_start -= first_offset_into_section
+            first_fragment = segments_37[sequence[0]]
+            section_start = calculateOffset(first_fragment.offset, current_size)
+            # If the first fragment inside the current section already
+            # starts at an offset to the original section start, account
+            # for this offset by moving the section start back
+            first_offset_into_section = calculateOffset(first_fragment.offset, first_fragment.section_start) - first_fragment.section_start
+            if first_offset_into_section > 0:
+                section_start -= first_offset_into_section
             for fragment in sequence:
                 current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
@@ -730,8 +728,19 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
             print_error("Z3 could not find a solution for section {0}".format(index))
             raise cu
         else:
+            section_start = last_model[start_13].as_long()
+            # Same reasoning as in the ILP case: if the first fragment
+            # started at an offset relative to the beginning of the section
+            # in the original file, section_start will be shifted by this
+            # amount in the model. In this case, move the beginning of the
+            # section back again.
+            _, min_idx = min((last_model[p[i]].as_long(), i) for i in range(len(section)))
+            first = section[min_idx]
+            first_offset_into_section = calculateOffset(first.offset, first.section_start) - first.section_start
+            if first_offset_into_section > 0:
+                section_start -= first_offset_into_section
             for i in range(len(section)):
-                section[i].section_start = last_model[start_13].as_long()
+                section[i].section_start = section_start
                 section[i].shift = (last_model.eval(p[i] * PAGESIZE + smt_constants[i][0])).as_long() - section[i].offset
 
         return last_model[end_13].as_long()
