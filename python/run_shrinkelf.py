@@ -10,7 +10,7 @@ from librarytrader.librarystore import LibraryStore
 shrinkelf = '{}/shrinkelf.py'.format(os.path.dirname(sys.argv[0]))
 solver = ''
 
-print('Usage: {} <LibraryStore file> <output directory>'.format(os.path.basename(sys.argv[0])))
+print('Usage: {} <LibraryStore file> <output directory> [z3|gurobi|]'.format(os.path.basename(sys.argv[0])))
 store_path = sys.argv[1]
 output_dir = sys.argv[2]
 if len(sys.argv) > 3:
@@ -73,6 +73,6 @@ with open(stats_file, 'r') as fd:
             print('WARNING: no shrunk file for {}'.format(filename))
             lines[idx] += ',{},{}'.format(0, 0)
 
-    with open(os.path.join(os.path.dirname(stats_file), 'stats_full.csv'), 'w') as outfd:
+    with open(os.path.join(output_dir, 'stats_full.csv'), 'w') as outfd:
         for line in lines:
             outfd.write(line + '\n')
