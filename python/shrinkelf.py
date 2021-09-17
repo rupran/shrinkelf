@@ -76,7 +76,7 @@ def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) 
             prev_item = list_of_items[idx - 1]
             if item_03[0] <= prev_item[1]:
                 # item overlaps with current element
-                return current_item
+                return prev_item
 #        for i in range(0, length_01):
 #            current_item = list_of_items[i]
 #            if item_03[1] < current_item[0]:
@@ -1143,7 +1143,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             ret.shdr_start = roundUp(current_size, SHDR64ALIGN)
         return ret
 
-def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges_i, last=False):
+def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges, i, last=False):
     current_fragment = FileFragment()
     # determine start and end addresses of section range in file
     if srcshdr.sh_type == SHT_NOBITS.value:
@@ -1209,7 +1209,7 @@ def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges_i, last
                 current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
             current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
         break
-    insertRange(current_fragment, section_ranges_i)
+    insertRange(current_fragment, section_ranges[i])
 
 # FIXME: Doku
 # \brief Computes the ranges to keep per section
@@ -1242,11 +1242,11 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
         offset: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
         # split ranges in section ranges and add layout data (ranges that end in section i)
         while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + offset:
-            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges[i])
+            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges, i)
             r += 1
         # split ranges in section ranges and add layout data (range that begins in section i but does not end there)
         if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset:
-            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges[i], last=True)
+            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges, i, last=True)
 
     return section_ranges
 
