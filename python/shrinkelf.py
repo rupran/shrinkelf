@@ -3,6 +3,7 @@
 import argparse
 import bisect
 import copy
+import logging
 import os
 import time
 from sys import stderr
@@ -544,12 +545,14 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             m._yvars = y
             m._size = size
             m.Params.lazyConstraints = 1
+            before = time.time()
             m.optimize(subtourelim)
             # m.optimize()
             if m.status != GRB.OPTIMAL:
                 print_error("Unable to solve ILP instance for section " + str(index))
                 raise cu
 
+            time_taken = time.time() - before
             current_fragment_index: int = -1
             last_fragment_index: int = -1
             for key in y:
@@ -580,6 +583,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
         except Exception as e:
             print(e)
             raise e
+        logging.debug('ILP: %d after %.3f seconds', current_size, time_taken)
         return current_size
 
 
@@ -700,6 +704,7 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
 
         last_model = None
         cur_end = section[-1].offset + section[-1].fsize
+        before = time.time()
         while True:
             # Check for a smaller possible value of 'end', pin start and all
             # p[i] * PAGESIZE to be smaller than the current end
@@ -718,11 +723,14 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
                 terms.append(p[i] == model[p[i]])
             res = optimizer.check(z3.And(terms))
             if res != z3.sat:
+                logging.warning('weird unsat')
+                logging.debug('%s', str(model))
                 break
             else:
                 last_model = copy.deepcopy(model)
             # ... until here.
             cur_end = model[end_13].as_long()
+            logging.debug('SMT: %d after %.3f seconds', cur_end, time.time() - before)
 
         if last_model is None:
             print_error("Z3 could not find a solution for section {0}".format(index))
@@ -827,6 +835,23 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                 tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
                 tmp_111.section_start = section_start
                 current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
+
+    for section_no, seg in enumerate(ret.segments):
+        start_end_pairs = []
+        logging.debug('calculated segments for section no. %d', section_no)
+        for fr_idx, fr_rng in enumerate(seg):
+            logging.debug('fr_idx %d, offset %x, shift %x -> (%x, size %x, end %x)',
+                          fr_idx, fr_rng.offset, fr_rng.shift,
+                          fr_rng.offset + fr_rng.shift, fr_rng.fsize,
+                          fr_rng.offset + fr_rng.shift + fr_rng.fsize)
+            start_end_pairs.append((fr_rng.offset + fr_rng.shift, fr_rng.offset + fr_rng.shift + fr_rng.fsize))
+        start_end_pairs.sort()
+        for idx, k in enumerate(start_end_pairs[:-1]):
+            end_cur = k[1]
+            start_next = start_end_pairs[idx + 1][0]
+            if end_cur > start_next:
+                logging.debug('--- end_cur > start_next: %x > %x', end_cur, start_next)
+
     # join address ranges between sections
     current_fragment: FragmentRange = FragmentRange()
     ret.list_entries = loads + old_entries
@@ -953,7 +978,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                         # in the gap_too_small case, the current_shift was not
                         # added to current_start before combining... why?
                         if gap_too_small and current_shift > 0:
-                            print('WARNING: different than before')
+                            logging.warning('WARNING: different than before')
                         if current_start + current_shift >= frag.offset and current_end + current_shift == frag.offset + frag.fsize:
                             frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
                             frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
@@ -1002,7 +1027,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                     current_size += shift
 
                     if gap_too_small and current_fragment.shift > 0:
-                        print('WARNING: different from split implementation')
+                        logging.warning('WARNING: different from split implementation')
 
                     # correct offset of LOAD PHDRs after inserting PHDR table
                     if current_fragment.offset + current_fragment.shift >= frag.offset and current_fragment.offset + current_fragment.shift + current_fragment.fsize == frag.offset + frag.fsize:
@@ -1249,6 +1274,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         print_error("Could not open input file " + file)
         cu.exitstatus = 1
         return
+    logging.debug('Working on file \'%s\'', output_file)
     cu.level += 1
     try:
         # ELF representation of input file
@@ -1404,6 +1430,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # current section header of output file
         dstshdr = GElf_Shdr()
         # lib creates section 0 automatically so we start with section 1
+        section_ranges_list = []
         for i in range(1, scnnum.value):
             srcscn: c_void_p = libelf.elf_getscn(srce, c_size_t(i))
             if not srcscn:
@@ -1518,12 +1545,61 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                 dstshdr.sh_size = srcshdr.sh_size
             else:
                 dstshdr.sh_size = calculateSectionSize(section_ranges[i])
+                logging.debug('calculated dstshdr.sh_size = %x, srcshdr.sh_size was %x,'\
+                              ' section_shift = %x, srcshdr.sh_offset was %x, len(section_ranges[i] = %d)',
+                              dstshdr.sh_size, srcshdr.sh_size,
+                              section_ranges[i][0].section_shift,
+                              srcshdr.sh_offset, len(section_ranges[i]))
+                for fxx, r in enumerate(section_ranges[i]):
+                    logging.debug('section_ranges[%d][%d]: start = %x, end = %x,'\
+                                  ' section_shift = %x, section_offset = %x, fragment_shift = %x',
+                                  i, fxx, r.start, r.end, r.section_shift,
+                                  r.section_offset, r.fragment_shift)
+                logging.debug('max start + shift: %x',
+                              max(r.start + r.fragment_shift for r in section_ranges[i]))
+                for fxx, fragment in enumerate(section_ranges[i][:-1]):
+                    end_cur = fragment.end + fragment.fragment_shift
+                    start_next = section_ranges[i][fxx + 1].start + section_ranges[i][fxx + 1].fragment_shift
+                    if end_cur > start_next:
+                        logging.warning('Overlap inside sections %d and %d: %x > %x',
+                                        fxx, fxx + 1, end_cur, start_next)
             dstshdr.sh_entsize = srcshdr.sh_entsize
             dstshdr.sh_link = srcshdr.sh_link
             if libelf.gelf_update_shdr(dstscn, byref(dstshdr)) == 0:
                 print_error("Could not update ELF structures (Sections): " + (libelf.elf_errmsg(-1)).decode())
                 raise cu
+            logging.debug('Section \'%s\': addr %x, offset %x, align %x, size %x -> offset + size %x',
+                          libelf.elf_strptr(srce, srcehdr.e_shstrndx, srcshdr.sh_name).decode('utf-8'),
+                          dstshdr.sh_addr, dstshdr.sh_offset, dstshdr.sh_addralign,
+                          dstshdr.sh_size, dstshdr.sh_offset + dstshdr.sh_size)
+            if dstshdr.sh_type != SHT_NOBITS.value and dstshdr.sh_offset % dstshdr.sh_addralign != 0:
+                logging.warning('Section %d is NOT ALIGNED', i)
+            # other checks to avoid ELF_E_LAYOUT errors:
+            # - overlap of SHDR table and section (skipped if offset >= shdr_end or offset + size <= shdr_start)
+            tmp_shdr_start = c_uint64(desc.shdr_start)
+            if tmp_shdr_start in range(dstshdr.sh_offset, dstshdr.sh_offset + dstshdr.sh_size):
+                logging.warning('shdr_start (%x) inside %x:%x',
+                                tmp_shdr_start, dstshdr.sh_offset,
+                                dstshdr.sh_offset + dstshdr.sh_size)
+            # - offset + size >= total file size (?)
+            #
+            if dstshdr.sh_type != SHT_NOBITS.value:
+                section_ranges_list.append((dstshdr.sh_offset, dstshdr.sh_offset + dstshdr.sh_size))
+        # - phoff % align (_libelf_falign of elfclass)
+        hdr_align = 4 if elfclass == ELFCLASS32 else 8
+        if dstehdr.e_phoff % hdr_align != 0:
+            logging.debug('e_phoff at %x is not aligned!', dstehdr.e_phoff)
+        # - shoff % align
         dstehdr.e_shoff = c_uint64(desc.shdr_start)
+        if dstehdr.e_shoff % hdr_align != 0:
+            logging.debug('e_shoff at %x is not aligned!', dstehdr.e_shoff)
+        # - overlapping sections
+        for idx in range(len(section_ranges_list) - 1):
+            end_cur = section_ranges_list[idx][1]
+            start_next = section_ranges_list[idx + 1][0]
+            if end_cur > start_next:
+                logging.warning('Sections {} and {} overlap (%x > %x)',
+                                idx, idx + 1, end_cur, start_next)
         # write new ELF file
         if libelf.elf_update(dste, ELF_C_WRITE) == off_t(-1).value:
             print_error("Could not write ELF structures to output file: " + (libelf.elf_errmsg(-1)).decode())
@@ -1710,7 +1786,13 @@ if __name__ == "__main__":
                         help="Permute fragments for potential smaller output file.\nOption determines which method to use.\nWARNING: brute-force is in O(n!)")
     parser.add_argument("-o", "--output-file", metavar="FILE", help="Name of the output file")
     parser.add_argument("-l", "--log", action='store_true', help="Output log files when using gurobi")
+    parser.add_argument("-d", "--debug", action='store_true', help="very verbose debugging output")
     args = parser.parse_args()
+    loglevel = logging.WARNING
+    if args.debug:
+        loglevel = logging.DEBUG
+    logging.basicConfig(format='%(asctime)s %(levelname)-7s %(message)s',
+                        level=loglevel)
     parsed = parse_args(args.keep, args.keep_file, args.file, args.output_file)
     if parsed:
         shrinkelf(parsed[0], args.file, parsed[1], args.permute, args.log)

@@ -151,3 +151,5 @@ libelf.gelf_newphdr.argtypes = [Elf_p, c_size_t]
 libelf.gelf_newphdr.restype = POINTER(GElf_Phdr)
 libelf.gelf_getphdr.argtypes = [Elf_p, c_int, POINTER(GElf_Phdr)]
 libelf.gelf_getphdr.restype = POINTER(GElf_Phdr)
+libelf.elf_strptr.argtypes = [Elf_p, c_size_t, c_size_t]
+libelf.elf_strptr.restype = c_char_p
