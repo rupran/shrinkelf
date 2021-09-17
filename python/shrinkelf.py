@@ -569,12 +569,14 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             assert sequence[-1] == last_fragment_index, "does not include all fragments"
             first_fragment = segments_37[sequence[0]]
             section_start = calculateOffset(first_fragment.offset, current_size)
+
             # If the first fragment inside the current section already
             # starts at an offset to the original section start, account
             # for this offset by moving the section start back
             first_offset_into_section = calculateOffset(first_fragment.offset, first_fragment.section_start) - first_fragment.section_start
             if first_offset_into_section > 0:
                 section_start -= first_offset_into_section
+            assert section_start >= current_size
             for fragment in sequence:
                 current_fragment = segments_37[fragment]
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
@@ -588,8 +590,10 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 
 
 # Fixme: Doku
-def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name, log):
+def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file_name, log, section_aligns):
     for i in range(1, len(segments_36)):
+        # Make sure the next section starts with proper alignment
+        current_size = roundUp(current_size, section_aligns[i])
         if i == 1:
             fix_first = 0 == segments_36[i][0].offset // PAGESIZE
         else:
@@ -755,8 +759,9 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
 
 
 # Fixme: Doku
-def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int) -> int:
+def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int, section_aligns: List[int]) -> int:
     for i in range(1, len(segments_13)):
+        current_size = roundUp(current_size, section_aligns[i])
         if i == 1:
             fix_first = 0 == segments_13[i][0].offset // PAGESIZE
         else:
@@ -806,6 +811,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     ret: LayoutDescription = LayoutDescription()
     ret.segment_num = size
     ret.segments = [[]] * ret.segment_num
+    ret.section_aligns = [1] * ret.segment_num
     # number of LOAD entries in new PHDR table
     # Start with one for file header and one for PHDR table
     loads = 2
@@ -817,6 +823,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     for i in range(1, size):
         # determine the address ranges from the data ranges of a section
         ret.segments[i] = segments(ranges_13[i], ranges_13[i][0].section_offset)
+        ret.section_aligns[i] = ranges_13[i][0].section_align
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
     if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
@@ -824,9 +831,9 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
-        current_size = solve_with_gurobi(ret.segments, current_size, file_name, log)
+        current_size = solve_with_gurobi(ret.segments, current_size, file_name, log, ret.section_aligns)
     elif permute_ranges == PERMUTE_WITH_Z3:
-        current_size = solve_with_z3(ret.segments, current_size)
+        current_size = solve_with_z3(ret.segments, current_size, ret.section_aligns)
     else:
         # simply push the address ranges together
         for i in range(1, size):
@@ -1162,7 +1169,7 @@ def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges_i, last
                     i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
                     srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
             raise cu
-    current_fragment.section_align = srcshdr.sh_addralign
+    current_fragment.section_align = 1 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_addralign
     current_fragment.section_offset = srcshdr.sh_offset
     # memory layout of section range
     for j in range(0, phdrnum.value):

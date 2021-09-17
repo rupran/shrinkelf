@@ -223,13 +223,14 @@ class LayoutDescription:
     segments: List[List[FragmentRange]]
     segment_num: int
     segment_list: List[FragmentRange]
+    section_aligns: List[int]
     list_entries: int
     phdr_in_section: int
 
     # Fixme: Doku
     def __init__(self, list_entries: int = 0, segment_num: int = 0, segments: List[List[FragmentRange]] = None,
                  segment_list: List[FragmentRange] = None, phdr_vaddr: int = 0, phdr_start: int = 0,
-                 phdr_entries: int = 0, shdr_start: int = 0, phdr_in_section: int = 0) -> None:
+                 phdr_entries: int = 0, shdr_start: int = 0, phdr_in_section: int = 0, section_aligns: List[int] = None) -> None:
         """ Initialize self.
 
         :param list_entries:
@@ -250,12 +251,16 @@ class LayoutDescription:
         :type shdr_start: int
         :param phdr_in_section: index in the mid of which section the PHDR table lies
         :type phdr_in_section: int
+        :param section_aligns: the alignment requirements of all sections
+        :type section_aligns: List[int]
         """
 
         if segment_list is None:
             segment_list = []
         if segments is None:
             segments = []
+        if section_aligns is None:
+            section_aligns = []
         self.list_entries = list_entries
         self.segment_num = segment_num
         self.segments = segments
@@ -265,6 +270,7 @@ class LayoutDescription:
         self.phdr_entries = phdr_entries
         self.shdr_start = shdr_start
         self.phdr_in_section = phdr_in_section
+        self.section_aligns = section_aligns
 
     def sorted_loadable_segments(self) -> List[FragmentRange]:
         """ Return a list of the loadable fragment ranges (which will provide the data for the new LOAD segments). """
