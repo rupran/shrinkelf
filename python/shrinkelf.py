@@ -510,7 +510,10 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 b_add = ((b.offset % PAGESIZE) - (a.end_in_file() % PAGESIZE) + PAGESIZE) % PAGESIZE + b.fsize
                 d[(i, j)] = b_add
         try:
-            m: gp.Model = gp.Model("section-{0}".format(index))
+            env = gp.Env(empty=True)
+            env.setParam('OutputFlag', 0)
+            env.start()
+            m: gp.Model = gp.Model("section-{0}".format(index), env=env)
             m.Params.LogToConsole = 0
             if log:
                 m.Params.LogFile = "{0}.section_{1}.log".format(file, index)
@@ -582,6 +585,9 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
                 current_fragment.shift = calculateOffset(current_fragment.offset, current_size) - current_fragment.offset
                 current_fragment.section_start = section_start
                 current_size = current_fragment.offset + current_fragment.shift + current_fragment.fsize
+
+            m.dispose()
+            env.dispose()
         except Exception as e:
             print(e)
             raise e
