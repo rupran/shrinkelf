@@ -1611,7 +1611,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             end_cur = section_ranges_list[idx][1]
             start_next = section_ranges_list[idx + 1][0]
             if end_cur > start_next:
-                logging.warning('Sections {} and {} overlap (%x > %x)',
+                logging.warning('Sections %d and %d overlap (%x > %x)',
                                 idx, idx + 1, end_cur, start_next)
         # write new ELF file
         if libelf.elf_update(dste, ELF_C_WRITE) == off_t(-1).value:
