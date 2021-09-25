@@ -1004,174 +1004,125 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
                     raise Done()
 
     except EndOfSegmentException:
-        ret.phdr_in_section = i
-        for k in range(0, len(ret.segments[i])):
-            frag = ret.segment_list[0]
-            if not containsSegment(frag, ret.segments[i][k]):
-                # append to segment k - 1
-                if k == 0:
-                    current_fragment = ret.segments[i-1][-1]
-                    ret.phdr_in_section = i-1
+        # In this case, we did not find a space for the PHDR before
+        # the next segment ahead, so we will keep searching and
+        # undoing possible shifts to find the first identity-mapped
+        # spot where the table can fit.
+        ret.phdr_in_section = -1
+        enough_space = False
+        # Find a fragment which has enough space after it to
+        # accommodate the PHDR table in the file with all earlier
+        # shifts undone.
+        while not enough_space:
+            current_block = ret.segments[i]
+            end = max(frag.offset + frag.shift + frag.fsize for frag in current_block)
+
+            i += 1
+            if i == len(ret.segments):
+                break
+
+            ahead = ret.segments[i]
+            start_ahead = min(frag.offset for frag in ahead)
+            logging.debug('Trying to place PHDR table before'\
+                            ' section {}, gap from {:x} to {:x} => space 0x{:x}'.format(
+                i, end, start_ahead, start_ahead - end
+            ))
+            phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(end, end, elfclass, False)
+            enough_space = start_ahead >= phdr_vaddr + entry_size * ret.list_entries
+            ret.phdr_in_section = i - 1
+
+        if enough_space:
+            logging.debug('enough space at {:x}'.format(end))
+            # Shift up earlier sections
+            section_shift = 0
+            contained_fixed = set()
+            for i in range(1, ret.phdr_in_section + 1):
+                if len(ret.segments[i]) == 1:
+                    section_shift = -ret.segments[i][0].shift
+                    ret.segments[i][0].section_start += section_shift
+                    ret.segments[i][0].shift = 0
+                    logging.debug('move earlier section [{}] by {:x}, len = 1'.format(
+                        i, section_shift))
+                    containing_segment = ret.segments[i][0].contained_in
+                    if containing_segment > 0 and containing_segment not in contained_fixed:
+                        contained_fixed.add(containing_segment)
+                        ret.segment_list[containing_segment].offset += section_shift
+                        logging.debug('moving earlier segment [{}] forward by {:x}, len = 1'.format(
+                            containing_segment, section_shift))
                 else:
-                    current_fragment = ret.segments[i][k - 1]
-                ahead = ret.segments[i][k]
-                fileoffset = current_fragment.offset + current_fragment.fsize + current_fragment.shift
-                memoryoffset = current_fragment.vaddr + current_fragment.msize
-                phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(fileoffset, memoryoffset, elfclass, False)
-                if ahead.vaddr >= phdr_vaddr + entry_size * ret.list_entries:
-                    # If we find enough space before 'ahead', let's add the
-                    # program header right here
-                    ret.phdr_start = phdr_start
-                    ret.phdr_vaddr = phdr_vaddr
-                    ret.phdr_entries = ret.list_entries
-                    shift = 0
-                    gap_too_small = ahead.offset + ahead.shift < ret.phdr_start + ret.phdr_entries * entry_size
-                    if gap_too_small:
-                        shift = roundUp(ret.phdr_start + ret.phdr_entries * entry_size - (ahead.offset + ahead.shift),
-                                        PAGESIZE)
+                    # Lowest offset with (forward) shift included
+                    lowest_offset_shifted, j1 = min((ret.segments[i][j].offset + ret.segments[i][j].shift, j)
+                                                for j in range(len(ret.segments[i])))
+                    # Lowest offset in original file
+                    lowest_offset, j2 = min((ret.segments[i][j].offset, j)
+                                            for j in range(len(ret.segments[i])))
+                    # note: j should be identical above
+                    assert j1 == j2
+                    # We determined how much the whole section is shifted
+                    # so we need to take this shift out
+                    section_shift = lowest_offset - lowest_offset_shifted
+                    for j in range(len(ret.segments[i])):
+                        ret.segments[i][j].section_start += section_shift
+                        ret.segments[i][j].shift += section_shift
+                        containing_segment = ret.segments[i][j].contained_in
+                        logging.debug('move earlier section [{}][{}] by {:x}, len = 1'.format(
+                            i, j, section_shift))
+                        if containing_segment <= 0 or containing_segment == len(ret.segment_list):
+                            continue
+                        if containing_segment not in contained_fixed:
+                            logging.debug('containing: {}, {:x} {:x}, shift {:x}'.format(
+                                containing_segment, ret.segment_list[containing_segment].offset,
+                                ret.segment_list[containing_segment].vaddr, section_shift
+                            ))
+                            contained_fixed.add(containing_segment)
+                            ret.segment_list[containing_segment].offset += section_shift
 
-                    for j in range(k, len(ret.segments[i])):
-                        tmp3 = ret.segments[i][k]
-                        tmp3.shift += shift
-                    for j in range(i + 1, size):
-                        for tmp3 in ret.segments[j]:
-                            tmp3.shift += shift
-                            tmp3.section_start += shift
-                    current_size += shift
+            logging.debug('determined section_shift before PHDR'\
+                            ' table: {:x}'.format(section_shift))
+            ret.phdr_start = phdr_start + section_shift
+            ret.phdr_vaddr = phdr_vaddr + section_shift
+            ret.phdr_entries = ret.list_entries
+            phdr_space = roundUp(ret.list_entries * entry_size, PAGESIZE)
+            # Later segments need to be shifted by a) taken out
+            # shift before PHDR table and b) the space of the PHDR
+            # table itself
+            later_segment_shift = section_shift + phdr_space
+            logging.debug('PHDR: {:x}/{:x} with {} entries, takes 0x{:x} bytes'.format(
+                            ret.phdr_start, ret.phdr_vaddr, ret.phdr_entries, phdr_space))
 
-                    if gap_too_small and current_fragment.shift > 0:
-                        logging.warning('WARNING: different from split implementation')
-
-                    # correct offset of LOAD PHDRs after inserting PHDR table
-                    if current_fragment.offset + current_fragment.shift >= frag.offset and current_fragment.offset + current_fragment.shift + current_fragment.fsize == frag.offset + frag.fsize:
-                        frag.fsize = ret.phdr_start + ret.phdr_entries * entry_size - frag.offset
-                        frag.msize = ret.phdr_vaddr + ret.phdr_entries * entry_size - frag.vaddr
-                        for tmp4 in ret.segment_list[1:]:
-                            tmp4.offset += shift
-                        ahead_frag = ret.segment_list[1]
-                        maybe_merge_with_next_fragment(ret, frag, ahead_frag)
-                        break
+            # Fixup later segments
+            for i in range(ret.phdr_in_section + 1, len(ret.segments)):
+                if len(ret.segments[i]) == 1:
+                    ret.segments[i][0].section_start += later_segment_shift
+                    ret.segments[i][0].shift += later_segment_shift
+                    logging.debug('move later section [{}] by {:x}, len = 1'.format(
+                        i, later_segment_shift))
+                    containing_segment = ret.segments[i][0].contained_in
+                    if containing_segment == len(ret.segment_list):
+                        continue
+                    if containing_segment not in contained_fixed:
+                        contained_fixed.add(containing_segment)
+                        ret.segment_list[containing_segment].offset += later_segment_shift
+                        logging.debug('moving segment_list[{}] forward by {:x}, len = 1'.format(
+                            containing_segment, later_segment_shift))
                 else:
-                    # In this case, we did not find a space for the PHDR before
-                    # the next segment ahead, so we will keep searching and
-                    # undoing possible shifts to find the first identity-mapped
-                    # spot where the table can fit.
-                    ret.phdr_in_section = -1
-                    enough_space = False
-                    # Find a fragment which has enough space after it to
-                    # accommodate the PHDR table in the file with all earlier
-                    # shifts undone.
-                    while not enough_space:
-                        current_block = ret.segments[i]
-                        end = max(frag.offset + frag.shift + frag.fsize for frag in current_block)
+                    for j in range(len(ret.segments[i])):
+                        ret.segments[i][j].section_start += later_segment_shift
+                        ret.segments[i][j].shift += later_segment_shift
+                        logging.debug('move later section [{}][{}] by {:x}, len > 1'.format(
+                            i, j, later_segment_shift))
+                        containing_segment = ret.segments[i][j].contained_in
+                        if containing_segment == len(ret.segment_list):
+                            continue
+                        if containing_segment not in contained_fixed:
+                            contained_fixed.add(containing_segment)
+                            ret.segment_list[containing_segment].offset += later_segment_shift
+                            logging.debug('moving segment_list[{}] forward by {:x}, len > 1'.format(
+                                containing_segment, later_segment_shift))
 
-                        i += 1
-                        if i == len(ret.segments):
-                            break
-
-                        ahead = ret.segments[i]
-                        start_ahead = min(frag.offset for frag in ahead)
-                        logging.debug('Trying to place PHDR table before'\
-                                      ' section {}, gap from {:x} to {:x} => space 0x{:x}'.format(
-                            i, end, start_ahead, start_ahead - end
-                        ))
-                        phdr_start, phdr_vaddr, entry_size = calculatePHDRInfo(end, end, elfclass, False)
-                        enough_space = start_ahead >= phdr_vaddr + entry_size * ret.list_entries
-                        ret.phdr_in_section = i - 1
-
-                    if enough_space:
-                        logging.debug('enough space at {:x}'.format(end))
-                        # Shift up earlier sections
-                        section_shift = 0
-                        contained_fixed = set()
-                        for i in range(1, ret.phdr_in_section + 1):
-                            if len(ret.segments[i]) == 1:
-                                section_shift = -ret.segments[i][0].shift
-                                ret.segments[i][0].section_start += section_shift
-                                ret.segments[i][0].shift = 0
-                                logging.debug('move earlier section [{}] by {:x}, len = 1'.format(
-                                    i, section_shift))
-                                containing_segment = ret.segments[i][0].contained_in
-                                if containing_segment > 0 and containing_segment not in contained_fixed:
-                                    contained_fixed.add(containing_segment)
-                                    ret.segment_list[containing_segment].offset += section_shift
-                                    logging.debug('moving earlier segment [{}] forward by {:x}, len = 1'.format(
-                                        containing_segment, section_shift))
-                            else:
-                                # Lowest offset with (forward) shift included
-                                lowest_offset_shifted, j1 = min((ret.segments[i][j].offset + ret.segments[i][j].shift, j)
-                                                            for j in range(len(ret.segments[i])))
-                                # Lowest offset in original file
-                                lowest_offset, j2 = min((ret.segments[i][j].offset, j)
-                                                        for j in range(len(ret.segments[i])))
-                                # note: j should be identical above
-                                assert j1 == j2
-                                # We determined how much the whole section is shifted
-                                # so we need to take this shift out
-                                section_shift = lowest_offset - lowest_offset_shifted
-                                for j in range(len(ret.segments[i])):
-                                    ret.segments[i][j].section_start += section_shift
-                                    ret.segments[i][j].shift += section_shift
-                                    containing_segment = ret.segments[i][j].contained_in
-                                    logging.debug('move earlier section [{}][{}] by {:x}, len = 1'.format(
-                                        i, j, section_shift))
-                                    if containing_segment <= 0 or containing_segment == len(ret.segment_list):
-                                        continue
-                                    if containing_segment not in contained_fixed:
-                                        logging.debug('containing: {}, {:x} {:x}, shift {:x}'.format(
-                                            containing_segment, ret.segment_list[containing_segment].offset,
-                                            ret.segment_list[containing_segment].vaddr, section_shift
-                                        ))
-                                        contained_fixed.add(containing_segment)
-                                        ret.segment_list[containing_segment].offset += section_shift
-
-                        logging.debug('determined section_shift before PHDR'\
-                                      ' table: {:x}'.format(section_shift))
-                        ret.phdr_start = phdr_start + section_shift
-                        ret.phdr_vaddr = phdr_vaddr + section_shift
-                        ret.phdr_entries = ret.list_entries
-                        phdr_space = roundUp(ret.list_entries * entry_size, PAGESIZE)
-                        # Later segments need to be shifted by a) taken out
-                        # shift before PHDR table and b) the space of the PHDR
-                        # table itself
-                        later_segment_shift = section_shift + phdr_space
-                        logging.debug('PHDR: {:x}/{:x} with {} entries, takes 0x{:x} bytes'.format(
-                                      ret.phdr_start, ret.phdr_vaddr, ret.phdr_entries, phdr_space))
-
-                        # Fixup later segments
-                        for i in range(ret.phdr_in_section + 1, len(ret.segments)):
-                            if len(ret.segments[i]) == 1:
-                                ret.segments[i][0].section_start += later_segment_shift
-                                ret.segments[i][0].shift += later_segment_shift
-                                logging.debug('move later section [{}] by {:x}, len = 1'.format(
-                                    i, later_segment_shift))
-                                containing_segment = ret.segments[i][0].contained_in
-                                if containing_segment == len(ret.segment_list):
-                                    continue
-                                if containing_segment not in contained_fixed:
-                                    contained_fixed.add(containing_segment)
-                                    ret.segment_list[containing_segment].offset += later_segment_shift
-                                    logging.debug('moving segment_list[{}] forward by {:x}, len = 1'.format(
-                                        containing_segment, later_segment_shift))
-                            else:
-                                for j in range(len(ret.segments[i])):
-                                    ret.segments[i][j].section_start += later_segment_shift
-                                    ret.segments[i][j].shift += later_segment_shift
-                                    logging.debug('move later section [{}][{}] by {:x}, len > 1'.format(
-                                        i, j, later_segment_shift))
-                                    containing_segment = ret.segments[i][j].contained_in
-                                    if containing_segment == len(ret.segment_list):
-                                        continue
-                                    if containing_segment not in contained_fixed:
-                                        contained_fixed.add(containing_segment)
-                                        ret.segment_list[containing_segment].offset += later_segment_shift
-                                        logging.debug('moving segment_list[{}] forward by {:x}, len > 1'.format(
-                                            containing_segment, later_segment_shift))
-                                logging.debug('ELSE')
-
-                        current_size += later_segment_shift
-                    else:
-                        ret.phdr_in_section = -1
+            current_size += later_segment_shift
+        else:
+            ret.phdr_in_section = -1
 
         # TODO: case that first segment contains whole .text section and PHDR table is pushed to the end of the .text section
     finally:
