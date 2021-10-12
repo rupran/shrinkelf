@@ -71,3 +71,9 @@ as in the original file, with gaps where unneeded code and data were removed.
 For this reason, we also do not need to patch any instructions in the ELF files
 as all relative distances between instructions and data will be unchanged after
 loading.
+
+## License
+shrinkelf itself is licensed under the terms of the GPLv3. The shipped
+libelf.so.1 file is distributed under the [BSD
+License](https://opensource.org/licenses/bsd-license.php), see the
+[LICENSE.libelf.so.1](LICENSE.libelf.so.1) file.
