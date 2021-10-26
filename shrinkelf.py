@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 #
+# Copyright 2019-2021, Fabian Lang <fabian.lang@fau.de>
+# Copyright 2021, Andreas Ziegler <andreas.ziegler@fau.de>
+#
 # This file is part of shrinkelf.
 #
 # shrinkelf is free software: you can redistribute it and/or modify

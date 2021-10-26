@@ -1,5 +1,8 @@
 # This file is part of shrinkelf.
 #
+# Copyright 2019-2021, Fabian Lang <fabian.lang@fau.de>
+# Copyright 2021, Andreas Ziegler <andreas.ziegler@fau.de>
+#
 # shrinkelf is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
