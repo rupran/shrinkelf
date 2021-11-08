@@ -1152,45 +1152,22 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
             ret.shdr_start = roundUp(current_size, SHDR64ALIGN)
         return ret
 
-def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges, i, last=False):
-    current_fragment = FileFragment()
-    # determine start and end addresses of section range in file
-    if srcshdr.sh_type == SHT_NOBITS.value:
-        # NOBITS section don't have data in file
-        current_fragment.start = 0
-        current_fragment.end = 0
-    else:
-        # determine start of range under construction relative to the start of its containing section
-        if current_range[0] < srcshdr.sh_offset:
-            # range under construction starts at the beginning of its containing section
-            current_fragment.start = 0
-        else:
-            current_fragment.start = current_range[0] - srcshdr.sh_offset
-        # determine end of range under construction relative to the end of its containing section
-        if last == False and current_range[1] < srcshdr.sh_offset + srcshdr.sh_size:
-            current_fragment.end = current_range[1] - srcshdr.sh_offset
-        else:
-            # range under construction ends at the end of its containing section
-            current_fragment.end = srcshdr.sh_size
-        if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-            print_error(
-                "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                    i, current_fragment.start % srcshdr.sh_entsize, current_fragment.start,
-                    srcshdr.sh_entsize, current_fragment.start + srcshdr.sh_offset))
-            raise cu
-        if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-            print_error(
-                "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                    i, current_fragment.end % srcshdr.sh_entsize, current_fragment.end,
-                    srcshdr.sh_entsize, current_fragment.end + srcshdr.sh_offset))
-            raise cu
-    current_fragment.section_align = 1 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_addralign
-    current_fragment.section_offset = srcshdr.sh_offset
-    # memory layout of section range
+# \brief Compute the correct values for the MemoryInfo member of a FileFragment
+#
+# \param current_fragment The currently processed fragment
+# \param section_number The section containing this fragment
+# \param src The original ELF file handle
+# \param srcshdr The original section header for the current section
+# \param phdrnum The total number of program headers in the original file
+#
+# \return Nothing, but updates the current_fragment.memory_info member with
+#         the computed values
+def computeMemoryInfoForFragment(current_fragment: FileFragment, section_number: int,
+                                 src: c_void_p, srcshdr: GElf_Shdr, phdrnum: c_size_t):
     for j in range(0, phdrnum.value):
         srcphdr = GElf_Phdr()
         if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
-            print_error("Could not retrieve source phdr structure {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+            print_error("Could not retrieve source phdr structure {0}: {1}".format(section_number, (libelf.elf_errmsg(-1)).decode()))
             raise cu
         if srcphdr.p_type != PT_LOAD.value:
             # not a loadable segment so it contains no data about the memory layout of any part of the input
@@ -1217,8 +1194,63 @@ def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges, i, las
                 # segment starts after section starts
                 current_fragment.memory_info.start = srcphdr.p_offset - srcshdr.sh_offset
             current_fragment.memory_info.end = current_fragment.memory_info.start + current_fragment.size()
-        break
-    insertRange(current_fragment, section_ranges[i])
+        return
+
+# \brief Compute a FileFragment for the currently processed (input) range
+#        in the section numbered section_number
+# \param current_range The currently processed input range
+# \param section_number The index of the current section
+# \param src The original ELF file handle
+# \param srcshdr The original section header for the current section
+# \param phdrnum The total nmber of program headers in the original file
+# \param section_ranges Array of Lists, containing all fragments for all sections
+#
+# \return Nothing, but updates the list at section_ranges[section_number] with
+#         a new FileFragment
+def computeFragmentForSection(current_range: Tuple[int, int], section_number: int,
+                              src: c_void_p, srcshdr: GElf_Shdr, phdrnum: c_size_t,
+                              section_ranges: List[List[FileFragment]], last: bool=False):
+    current_fragment = FileFragment()
+    # determine start and end addresses of section range in file
+    if srcshdr.sh_type == SHT_NOBITS.value:
+        # NOBITS section don't have data in file
+        current_fragment.start = 0
+        current_fragment.end = 0
+    else:
+        # determine start of range under construction relative to the start of its containing section
+        if current_range[0] < srcshdr.sh_offset:
+            # range under construction starts at the beginning of its containing section
+            current_fragment.start = 0
+        else:
+            current_fragment.start = current_range[0] - srcshdr.sh_offset
+        # determine end of range under construction relative to the end of its containing section
+        if last == False and current_range[1] < srcshdr.sh_offset + srcshdr.sh_size:
+            current_fragment.end = current_range[1] - srcshdr.sh_offset
+        else:
+            # range under construction ends at the end of its containing section
+            current_fragment.end = srcshdr.sh_size
+        if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
+            print_error(
+                "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
+                    section_number, current_fragment.start % srcshdr.sh_entsize,
+                    current_fragment.start, srcshdr.sh_entsize,
+                    current_fragment.start + srcshdr.sh_offset))
+            raise cu
+        if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
+            print_error(
+                "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
+                    section_number, current_fragment.end % srcshdr.sh_entsize,
+                    current_fragment.end, srcshdr.sh_entsize,
+                    current_fragment.end + srcshdr.sh_offset))
+            raise cu
+
+    current_fragment.section_align = 1 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_addralign
+    current_fragment.section_offset = srcshdr.sh_offset
+
+    # memory layout of section range
+    computeMemoryInfoForFragment(current_fragment, section_number, src, srcshdr, phdrnum)
+
+    insertRange(current_fragment, section_ranges[section_number])
 
 # FIXME: Doku
 # \brief Computes the ranges to keep per section
@@ -1230,7 +1262,7 @@ def fragment_helper(current_range, src, srcshdr, phdrnum, section_ranges, i, las
 # \return a List of lists containing the ranges (with additional information) per section
 def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], section_number: c_size_t) -> List[List[FileFragment]]:
     # number of segments in source file
-    phdrnum: c_size_t[int] = c_size_t(0)
+    phdrnum: c_size_t = c_size_t(0)
     if libelf.elf_getphdrnum(src, byref(phdrnum)) != 0:
         print_error("Could not retrieve number of segments from source file: " + (libelf.elf_errmsg(-1)).decode())
         raise cu
@@ -1238,24 +1270,43 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
     r: int = 0
     # ranges split per section
     section_ranges: List[List[FileFragment]] = [[]] * section_number.value
-    for i in range(0, section_number.value):
-        section_ranges[i] = []
-        srcscn: Elf_Scn_p = libelf.elf_getscn(src, c_size_t(i))
+    for current_section in range(0, section_number.value):
+        section_ranges[current_section] = []
+        srcscn: Elf_Scn_p = libelf.elf_getscn(src, c_size_t(current_section))
         if not srcscn:
-            print_error("Could not retrieve source section data for section {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+            print_error("Could not retrieve source section data for section {0}: {1}".format(current_section, (libelf.elf_errmsg(-1)).decode()))
             raise cu
         srcshdr: GElf_Shdr = GElf_Shdr()
         if not libelf.gelf_getshdr(srcscn, byref(srcshdr)):
-            print_error("Could not retrieve source shdr data for section {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+            print_error("Could not retrieve source shdr data for section {0}: {1}".format(current_section, (libelf.elf_errmsg(-1)).decode()))
             raise cu
         offset: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
-        # split ranges in section ranges and add layout data (ranges that end in section i)
+        # split ranges in section ranges and add layout data (ranges that end in section current_section)
         while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + offset:
-            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges, i)
+            computeFragmentForSection(ranges_27[r], current_section, src, srcshdr, phdrnum, section_ranges)
             r += 1
-        # split ranges in section ranges and add layout data (range that begins in section i but does not end there)
+        # split ranges in section ranges and add layout data (range that begins in section current_section but does not end there)
         if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset:
-            fragment_helper(ranges_27[r], src, srcshdr, phdrnum, section_ranges, i, last=True)
+            computeFragmentForSection(ranges_27[r], current_section, src, srcshdr, phdrnum, section_ranges, last=True)
+        # If we had no ranges for the current section, add a 1 byte pseudo
+        # entry to keep the section around
+        if current_section > 0 and not section_ranges[current_section]:
+            target_size = 0 if srcshdr.sh_type == SHT_NOBITS.value else 1
+            logging.warning('No ranges for section %d, creating %d byte pseudo fragment',
+                            current_section, target_size)
+            pseudo_fragment = FileFragment(start=0, end=target_size,
+                                           section_offset=srcshdr.sh_offset,
+                                           section_align=1)
+            computeMemoryInfoForFragment(pseudo_fragment, current_section, src, srcshdr, phdrnum)
+            logging.debug(' created pseudo fragment with values (start %x,'\
+                          ' end %x, section_offset %x, memory_info(start %x,'\
+                          ' end %x, flags %x, align %x))', pseudo_fragment.start,
+                          pseudo_fragment.end, pseudo_fragment.section_offset,
+                          pseudo_fragment.memory_info.start,
+                          pseudo_fragment.memory_info.end,
+                          pseudo_fragment.memory_info.flags,
+                          pseudo_fragment.memory_info.align)
+            insertRange(pseudo_fragment, section_ranges[current_section])
 
     return section_ranges
 
@@ -1369,6 +1420,11 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             print_error("Could not retrieve number of sections from input file: " + (libelf.elf_errmsg(-1)).decode())
             raise cu
         section_ranges: List[List[FileFragment]] = computeSectionRanges(srce, ranges_34, scnnum)
+        for sec_no, section_range in enumerate(section_ranges):
+            logging.debug('calculated fragments for section %d:', sec_no)
+            for fragment_no, fragment in enumerate(section_range):
+                logging.debug('  fragment %d: %x %x', fragment_no, fragment.start, fragment.end)
+
         # number of segments in input file
         phdrnum: c_size_t = c_size_t(0)
         if libelf.elf_getphdrnum(srce, byref(phdrnum)) != 0:
@@ -1378,6 +1434,9 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         loads: int = countLOADs(srce)
         # description of layout of output file
         desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file, log)
+        if not desc:
+            print_error("Could not generate new file layout")
+            raise cu
         if desc.phdr_in_section == -1:
             print_error("Error calculating file layout: no space for PHDRs")
             raise cu
@@ -1577,14 +1636,15 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                                   ' section_shift = %x, section_offset = %x, fragment_shift = %x',
                                   i, fxx, r.start, r.end, r.section_shift,
                                   r.section_offset, r.fragment_shift)
-                logging.debug('max start + shift: %x',
-                              max(r.start + r.fragment_shift for r in section_ranges[i]))
-                for fxx, fragment in enumerate(section_ranges[i][:-1]):
-                    end_cur = fragment.end + fragment.fragment_shift
-                    start_next = section_ranges[i][fxx + 1].start + section_ranges[i][fxx + 1].fragment_shift
-                    if end_cur > start_next:
-                        logging.warning('Overlap inside sections %d and %d: %x > %x',
-                                        fxx, fxx + 1, end_cur, start_next)
+                if len(section_ranges[i]) > 0:
+                    logging.debug('max start + shift: %x',
+                                max(r.start + r.fragment_shift for r in section_ranges[i]))
+                    for fxx, fragment in enumerate(section_ranges[i][:-1]):
+                        end_cur = fragment.end + fragment.fragment_shift
+                        start_next = section_ranges[i][fxx + 1].start + section_ranges[i][fxx + 1].fragment_shift
+                        if end_cur > start_next:
+                            logging.warning('Overlap inside sections %d and %d: %x > %x',
+                                            fxx, fxx + 1, end_cur, start_next)
             dstshdr.sh_entsize = srcshdr.sh_entsize
             dstshdr.sh_link = srcshdr.sh_link
             if libelf.gelf_update_shdr(dstscn, byref(dstshdr)) == 0:
