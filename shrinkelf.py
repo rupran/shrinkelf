@@ -51,6 +51,7 @@ class CleanUp(Exception):
         :param level: indicates which file and ELF descriptors are open
         :param exitstatus: exit status to exit the program
         """
+        super().__init__()
         self.level = level
         self.exitstatus = exitstatus
 
@@ -619,7 +620,7 @@ def solve_with_gurobi(segments_36: List[List[FragmentRange]], current_size, file
         # Make sure the next section starts with proper alignment
         current_size = roundUp(current_size, section_aligns[i])
         if i == 1:
-            fix_first = 0 == segments_36[i][0].offset // PAGESIZE
+            fix_first = (segments_36[i][0].offset // PAGESIZE == 0)
         else:
             fix_first = segments_36[i-1][-1].fsize > 0 and (segments_36[i-1][-1].vaddr + segments_36[i-1][-1].msize) // PAGESIZE == segments_36[i][0].vaddr // PAGESIZE
         # fix_first = current_size // PAGESIZE == segments_36[i][0].offset // PAGESIZE
@@ -787,7 +788,7 @@ def solve_with_z3(segments_13: List[List[FragmentRange]], current_size: int, sec
     for i in range(1, len(segments_13)):
         current_size = roundUp(current_size, section_aligns[i])
         if i == 1:
-            fix_first = 0 == segments_13[i][0].offset // PAGESIZE
+            fix_first = (segments_13[i][0].offset // PAGESIZE == 0)
         else:
             fix_first = segments_13[i-1][-1].fsize > 0 and ((segments_13[i-1][-1].vaddr + segments_13[i-1][-1].msize) // PAGESIZE == segments_13[i][0].vaddr // PAGESIZE)
         # fix_first = current_size // PAGESIZE == segments_13[i][0].offset // PAGESIZE
@@ -1224,7 +1225,7 @@ def computeFragmentForSection(current_range: Tuple[int, int], section_number: in
         else:
             current_fragment.start = current_range[0] - srcshdr.sh_offset
         # determine end of range under construction relative to the end of its containing section
-        if last == False and current_range[1] < srcshdr.sh_offset + srcshdr.sh_size:
+        if last is False and current_range[1] < srcshdr.sh_offset + srcshdr.sh_size:
             current_fragment.end = current_range[1] - srcshdr.sh_offset
         else:
             # range under construction ends at the end of its containing section
