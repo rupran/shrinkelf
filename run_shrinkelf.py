@@ -51,13 +51,14 @@ for library in store.get_library_objects():
     if not os.path.exists(file_to_tailor):
         continue
 
-    # Output to <output_dir>/<basename>
+    # Output to <output_dir>/<fullname>
     bname = os.path.basename(file_to_tailor)
-    out_file = os.path.join(output_dir, bname)
+    out_path = os.path.join(output_dir, library.fullname[1:])
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     keep_file = 'keep_file_{}'.format(bname)
 
-    command_list = [shrinkelf, '-K', keep_file, '-o', out_file,
+    command_list = [shrinkelf, '-K', keep_file, '-o', out_path,
                     *solver_parameters, file_to_tailor]
     print('Running shrinkelf on {}'.format(bname))
     time_before = time.time()
@@ -67,7 +68,7 @@ for library in store.get_library_objects():
 
     running_time = time.time() - time_before
 
-    run_times[out_file] = running_time
+    run_times[library.fullname] = running_time
 
 with open(stats_file, 'r') as fd:
     lines = [l.strip() for l in fd.readlines()]
@@ -76,7 +77,7 @@ with open(stats_file, 'r') as fd:
             lines[0] += ',filesize after,shrinkelf time'
             continue
 
-        filename = os.path.basename(line.split(',')[0])
+        filename = line.split(',')[0]
         full_path = os.path.join(output_dir, filename)
         if os.path.isfile(full_path):
             if full_path not in run_times:
