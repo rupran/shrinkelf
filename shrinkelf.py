@@ -24,7 +24,6 @@ import copy
 import logging
 import os
 import time
-from sys import stderr
 from typing import Optional, Tuple, Dict
 
 import gurobipy as gp
@@ -67,11 +66,6 @@ class Done(Exception):
 
 class EndOfSegmentException(Exception):
     pass
-
-
-def print_error(text):
-    """ Print text to standard error. """
-    logging.error(text)
 
 
 def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
@@ -155,12 +149,14 @@ def countLOADs(elf) -> int:
     # number of segments in file
     phdrnum = c_size_t(0)
     if libelf.elf_getphdrnum(elf, byref(phdrnum)) != 0:
-        print_error("Could not retrieve number of segments from source file: " + (libelf.elf_errmsg(-1)).decode())
+        logging.error("Could not retrieve number of segments from source file: %s",
+                      libelf.elf_errmsg(-1).decode())
         raise cu
     phdr = GElf_Phdr()
     for i in range(0, phdrnum.value):
         if not libelf.gelf_getphdr(elf, i, byref(phdr)):
-            print_error("Could not retrieve source phdr structure {0}: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+            logging.error("Could not retrieve source phdr structure %d: %s",
+                          i, libelf.elf_errmsg(-1).decode())
             raise cu
         if phdr.p_type == PT_LOAD.value:
             count += 1
@@ -571,7 +567,7 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             m.optimize(subtourelim)
             # m.optimize()
             if m.status != GRB.OPTIMAL:
-                print_error("Unable to solve ILP instance for section " + str(index))
+                logging.error("Unable to solve ILP instance for section %d", index)
                 raise cu
 
             time_taken = time.time() - before
@@ -762,7 +758,7 @@ def solve_smt_instance(section: List[FragmentRange], current_size: int, index: i
             logging.debug('SMT: %d after %.3f seconds', cur_end, time.time() - before)
 
         if last_model is None:
-            print_error("Z3 could not find a solution for section {0}".format(index))
+            logging.error("Z3 could not find a solution for section %d", index)
             raise cu
         else:
             section_start = last_model[start_13].as_long()
@@ -1156,19 +1152,19 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
 # \brief Compute the correct values for the MemoryInfo member of a FileFragment
 #
 # \param current_fragment The currently processed fragment
-# \param section_number The section containing this fragment
 # \param src The original ELF file handle
 # \param srcshdr The original section header for the current section
 # \param phdrnum The total number of program headers in the original file
 #
 # \return Nothing, but updates the current_fragment.memory_info member with
 #         the computed values
-def computeMemoryInfoForFragment(current_fragment: FileFragment, section_number: int,
-                                 src: c_void_p, srcshdr: GElf_Shdr, phdrnum: c_size_t):
+def computeMemoryInfoForFragment(current_fragment: FileFragment, src: c_void_p,
+                                 srcshdr: GElf_Shdr, phdrnum: c_size_t):
     for j in range(0, phdrnum.value):
         srcphdr = GElf_Phdr()
         if not libelf.gelf_getphdr(src, c_int(j), byref(srcphdr)):
-            print_error("Could not retrieve source phdr structure {0}: {1}".format(section_number, (libelf.elf_errmsg(-1)).decode()))
+            logging.error("Could not retrieve source phdr structure %d: %s",
+                          j, libelf.elf_errmsg(-1).decode())
             raise cu
         if srcphdr.p_type != PT_LOAD.value:
             # not a loadable segment so it contains no data about the memory layout of any part of the input
@@ -1231,25 +1227,27 @@ def computeFragmentForSection(current_range: Tuple[int, int], section_number: in
             # range under construction ends at the end of its containing section
             current_fragment.end = srcshdr.sh_size
         if srcshdr.sh_entsize != 0 and current_fragment.start % srcshdr.sh_entsize != 0:
-            print_error(
-                "In section {0}: range to keep is misaligned by {1} byte(s) (start relative to section start: 0x{2:x}, entrysize: 0x{3:x}, start of problematic range to keep: 0x{4:x})".format(
-                    section_number, current_fragment.start % srcshdr.sh_entsize,
-                    current_fragment.start, srcshdr.sh_entsize,
-                    current_fragment.start + srcshdr.sh_offset))
+            logging.error("In section %d: range to keep is misaligned by %d byte(s) "\
+                          "(start relative to section start: 0x%x, entrysize: 0x%x, "\
+                          "start of problematic range to keep: 0x%x)",
+                          section_number, current_fragment.start % srcshdr.sh_entsize,
+                          current_fragment.start, srcshdr.sh_entsize,
+                          current_fragment.start + srcshdr.sh_offset)
             raise cu
         if srcshdr.sh_entsize != 0 and current_fragment.end % srcshdr.sh_entsize != 0:
-            print_error(
-                "In section {0}: range to keep is misaligned by {1} byte(s) (end relative to section start: 0x{2:x}, entrysize: 0x{3:x}, end of problematic range to keep: 0x{4:x})".format(
-                    section_number, current_fragment.end % srcshdr.sh_entsize,
-                    current_fragment.end, srcshdr.sh_entsize,
-                    current_fragment.end + srcshdr.sh_offset))
+            logging.error("In section %d: range to keep is misaligned by %d byte(s) "\
+                          "(end relative to section start: 0x%x, entrysize: 0x%x, "\
+                          "end of problematic range to keep: 0x%x)",
+                          section_number, current_fragment.end % srcshdr.sh_entsize,
+                          current_fragment.end, srcshdr.sh_entsize,
+                          current_fragment.end + srcshdr.sh_offset)
             raise cu
 
     current_fragment.section_align = 1 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_addralign
     current_fragment.section_offset = srcshdr.sh_offset
 
     # memory layout of section range
-    computeMemoryInfoForFragment(current_fragment, section_number, src, srcshdr, phdrnum)
+    computeMemoryInfoForFragment(current_fragment, src, srcshdr, phdrnum)
 
     insertRange(current_fragment, section_ranges[section_number])
 
@@ -1265,7 +1263,8 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
     # number of segments in source file
     phdrnum: c_size_t = c_size_t(0)
     if libelf.elf_getphdrnum(src, byref(phdrnum)) != 0:
-        print_error("Could not retrieve number of segments from source file: " + (libelf.elf_errmsg(-1)).decode())
+        logging.error("Could not retrieve number of segments from source file: %s",
+                      libelf.elf_errmsg(-1).decode())
         raise cu
     # current range to process
     r: int = 0
@@ -1275,11 +1274,13 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
         section_ranges[current_section] = []
         srcscn: Elf_Scn_p = libelf.elf_getscn(src, c_size_t(current_section))
         if not srcscn:
-            print_error("Could not retrieve source section data for section {0}: {1}".format(current_section, (libelf.elf_errmsg(-1)).decode()))
+            logging.error("Could not retrieve source section data for section %d: %s",
+                          current_section, libelf.elf_errmsg(-1).decode())
             raise cu
         srcshdr: GElf_Shdr = GElf_Shdr()
         if not libelf.gelf_getshdr(srcscn, byref(srcshdr)):
-            print_error("Could not retrieve source shdr data for section {0}: {1}".format(current_section, (libelf.elf_errmsg(-1)).decode()))
+            logging.error("Could not retrieve source shdr data for section %d: %s",
+                          current_section, libelf.elf_errmsg(-1).decode())
             raise cu
         offset: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
         # split ranges in section ranges and add layout data (ranges that end in section current_section)
@@ -1298,7 +1299,7 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
             pseudo_fragment = FileFragment(start=0, end=target_size,
                                            section_offset=srcshdr.sh_offset,
                                            section_align=1)
-            computeMemoryInfoForFragment(pseudo_fragment, current_section, src, srcshdr, phdrnum)
+            computeMemoryInfoForFragment(pseudo_fragment, src, srcshdr, phdrnum)
             logging.debug(' created pseudo fragment with values (start %x,'\
                           ' end %x, section_offset %x, memory_info(start %x,'\
                           ' end %x, flags %x, align %x))', pseudo_fragment.start,
@@ -1334,18 +1335,18 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
     # --------------------------------------------------------------------------- #
     # libelf-library won't work if you don't tell it the ELF version
     if libelf.elf_version(EV_CURRENT) == EV_NONE.value:
-        print_error("ELF library initialization failed: " + (libelf.elf_errmsg(-1)).decode())
+        logging.error("ELF library initialization failed: %s",libelf.elf_errmsg(-1).decode())
         cu.exitstatus = 1
         return
     # file descriptor of input file
     try:
         srcfd: int = os.open(file, os.O_RDONLY)
     except FileNotFoundError:
-        print_error("Input file " + file + " not found")
+        logging.error("Input file %s not found", file)
         cu.exitstatus = 1
         return
     if srcfd < 0:
-        print_error("Could not open input file " + file)
+        logging.error("Could not open input file %s", file)
         cu.exitstatus = 1
         return
     logging.debug('Working on file \'%s\'', output_file)
@@ -1354,24 +1355,26 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # ELF representation of input file
         srce: Elf_p = libelf.elf_begin(c_int(srcfd), ELF_C_READ, None)
         if not srce:
-            print_error("Could not retrieve ELF structures from input file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not retrieve ELF structures from input file: %s",
+                          libelf.elf_errmsg(-1).decode())
             raise cu
         cu.level += 1
         # file descriptor of output file
         dstfd: int = os.open(output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
         if dstfd < 0:
-            print_error("Could not open output file " + output_file)
+            logging.error("Could not open output file %s",output_file)
             raise cu
         cu.level += 1
         # ELF representation of output file
         dste: Elf_p = libelf.elf_begin(c_int(dstfd), ELF_C_WRITE, None)
         if not dste:
-            print_error("Could not create ELF structures for output file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not create ELF structures for output file: %s",
+                          libelf.elf_errmsg(-1).decode())
             raise cu
         cu.level += 1
         # tell lib that the application will take care of the exact file layout
         if libelf.elf_flagelf(dste, ELF_C_SET, ELF_F_LAYOUT) == 0:
-            print_error("elf_flagelf() failed: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("elf_flagelf() failed: %s", libelf.elf_errmsg(-1).decode())
             raise cu
         # Specify fill byte for padding -- especially the padding within the .text section. Set to 0xcc because this
         # generates an interrupt on the target platform x86_64.
@@ -1382,12 +1385,13 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # ELF class of input file
         elfclass: c_int = libelf.gelf_getclass(srce)
         if elfclass == ELFCLASSNONE.value:
-            print_error("Could not retrieve ELF class from input file")
+            logging.error("Could not retrieve ELF class from input file")
             raise cu
         # executable header of input file
         srcehdr = GElf_Ehdr()
         if not libelf.gelf_getehdr(srce, pointer(srcehdr)):
-            print_error("Could not retrieve executable header from input file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not retrieve executable header from input file: %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         # gelf_newehdr sets automatically the magic numbers of an ELF header, the EI_CLASS byte according to elfclass,
         # the EI_VERSION byte and e_version to the version you told the library to use.
@@ -1398,7 +1402,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # executable header of output file
         dstehdr_pointer: POINTER(GElf_Ehdr) = libelf.gelf_newehdr(dste, elfclass)
         if not dstehdr_pointer:
-            print_error("Could not create executable header of output file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not create executable header of output file: %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         dstehdr: GElf_Ehdr = dstehdr_pointer.contents
         dstehdr.e_ident[EI_DATA] = srcehdr.e_ident[EI_DATA]
@@ -1410,7 +1415,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         dstehdr.e_shstrndx = srcehdr.e_shstrndx
         dstehdr.e_entry = srcehdr.e_entry
         if libelf.gelf_update_ehdr(dste, dstehdr_pointer) == 0:
-            print_error("Could not update ELF structures (Header): " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not update ELF structures (Header): %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         # --------------------------------------------------------------------------- #
         #  Copy program headers                                                       #
@@ -1418,7 +1424,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # number of sections in input file
         scnnum: c_size_t = c_size_t(0)
         if libelf.elf_getshdrnum(srce, byref(scnnum)) != 0:
-            print_error("Could not retrieve number of sections from input file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not retrieve number of sections from input file: %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         section_ranges: List[List[FileFragment]] = computeSectionRanges(srce, ranges_34, scnnum)
         for sec_no, section_range in enumerate(section_ranges):
@@ -1429,23 +1436,25 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # number of segments in input file
         phdrnum: c_size_t = c_size_t(0)
         if libelf.elf_getphdrnum(srce, byref(phdrnum)) != 0:
-            print_error("Could not retrieve number of segments from input file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not retrieve number of segments from input file: %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         # number of LOAD segments in source file
         loads: int = countLOADs(srce)
         # description of layout of output file
         desc: LayoutDescription = calculateNewFilelayout(section_ranges, phdrnum.value - loads, elfclass, permute_01, file, log)
         if not desc:
-            print_error("Could not generate new file layout")
+            logging.error("Could not generate new file layout")
             raise cu
         if desc.phdr_in_section == -1:
-            print_error("Error calculating file layout: no space for PHDRs")
+            logging.error("Error calculating file layout: no space for PHDRs")
             raise cu
         dstehdr.e_phoff = c_uint64(desc.phdr_start)
         # PHDR table of output file
         dstphdrs: POINTER(GElf_Phdr) = libelf.gelf_newphdr(dste, c_size_t(desc.phdr_entries))
         if not dstphdrs:
-            print_error("Could not create PHDR table for output file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not create PHDR table for output file: %s",
+                         libelf.elf_errmsg(-1).decode())
             raise cu
         # current PHDR entry of input file
         srcphdr = GElf_Phdr()
@@ -1456,7 +1465,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         # construct new PHDR table from old PHDR table
         for i in range(0, phdrnum.value):
             if not libelf.gelf_getphdr(srce, c_int(i), byref(srcphdr)):
-                print_error("Could not retrieve phdr structure {0} of input file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                logging.error("Could not retrieve phdr structure %d of input file: %s",
+                             i, libelf.elf_errmsg(-1).decode())
                 raise cu
             if srcphdr.p_type != PT_LOAD.value:
                 # copy values of non-LOAD segments - addresses and offsets will be fixed later
@@ -1516,18 +1526,21 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         for i in range(1, scnnum.value):
             srcscn: c_void_p = libelf.elf_getscn(srce, c_size_t(i))
             if not srcscn:
-                print_error("Could not retrieve section {0} of input file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                logging.error("Could not retrieve section %d of input file: %s",
+                             i, libelf.elf_errmsg(-1).decode())
                 raise cu
             if not libelf.gelf_getshdr(srcscn, byref(srcshdr)):
-                print_error("Could not retrieve shdr structure for section {0} of input file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                logging.error("Could not retrieve shdr structure for section %d of input file: %s",
+                             i, libelf.elf_errmsg(-1).decode())
                 raise cu
             dstscn: c_void_p = libelf.elf_newscn(dste)
             if not dstscn:
-                print_error(
-                    "Could not create section {0} in output file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                logging.error("Could not create section %d in output file: %s",
+                             i, libelf.elf_errmsg(-1).decode())
                 raise cu
             if not libelf.gelf_getshdr(dstscn, byref(dstshdr)):
-                print_error("Could not retrieve shdr structure for section {0} of output file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                logging.error("Could not retrieve shdr structure for section %d of output file: %s",
+                             i, libelf.elf_errmsg(-1).decode())
                 raise cu
             # allocate buffers for the data of the output file
             for tmp_89 in section_ranges[i]:
@@ -1605,7 +1618,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                     continue
                 dstdata_pointer: POINTER(Elf_Data) = libelf.elf_newdata(dstscn)
                 if not dstdata_pointer:
-                    print_error("Could not add data to section {0} of output file: {1}".format(i, (libelf.elf_errmsg(-1)).decode()))
+                    logging.error("Could not add data to section %d of output file: %s",
+                                 i, libelf.elf_errmsg(-1).decode())
                     raise cu
                 dstdata = dstdata_pointer.contents
                 # alignment does not matter here because the position of the data range is controlled via d_off
@@ -1649,7 +1663,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             dstshdr.sh_entsize = srcshdr.sh_entsize
             dstshdr.sh_link = srcshdr.sh_link
             if libelf.gelf_update_shdr(dstscn, byref(dstshdr)) == 0:
-                print_error("Could not update ELF structures (Sections): " + (libelf.elf_errmsg(-1)).decode())
+                logging.error("Could not update ELF structures (Sections): %s",
+                             libelf.elf_errmsg(-1).decode())
                 raise cu
             logging.debug('Section \'%s\': addr %x, offset %x, align %x, size %x -> offset + size %x',
                           libelf.elf_strptr(srce, srcehdr.e_shstrndx, srcshdr.sh_name).decode('utf-8'),
@@ -1685,7 +1700,8 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                                 idx, idx + 1, end_cur, start_next)
         # write new ELF file
         if libelf.elf_update(dste, ELF_C_WRITE) == off_t(-1).value:
-            print_error("Could not write ELF structures to output file: " + (libelf.elf_errmsg(-1)).decode())
+            logging.error("Could not write ELF structures to output file: %s",
+                          libelf.elf_errmsg(-1).decode())
             raise cu
     except CleanUp:
         cu.exitstatus = 1
@@ -1743,7 +1759,7 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
     # parse ranges to keep
     if keep is None:
         if keep_file is None:
-            print_error("No ranges specified. Aborting!")
+            logging.error("No ranges specified. Aborting!")
             cu.exitstatus = 1
             return None
         else:
@@ -1751,7 +1767,7 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
             try:
                 f = open(keep_file)
             except FileNotFoundError:
-                print_error("File " + keep_file + " not found. Aborting!")
+                logging.error("File %s not found. Aborting!", keep_file)
                 cu.exitstatus = 1
                 return None
             for line in f:
@@ -1763,89 +1779,90 @@ def parse_args(keep, keep_file, file, output_file) -> Optional[Tuple[List[Tuple[
         if ":" in item:
             frag_desc = item.split(":")
             if len(frag_desc) != 2:
-                print_error("Invalid range argument '" + item + "' - ignoring!")
+                logging.error("Invalid range argument '%s' - ignoring!", item)
                 error = True
                 continue
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error(
-                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                logging.error("First part ('%s') of range argument '%s' not parsable - ignoring!",
+                              frag_desc[0], item)
                 error = True
                 continue
             try:
                 length = int(frag_desc[1], base=0)
             except ValueError:
-                print_error(
-                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                logging.error("Second part ('%s') of range argument '%s' not parsable - ignoring!",
+                              frag_desc[1], item)
                 error = True
                 continue
             if start < 0:
-                print_error(
-                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                logging.error("START of %s must be bigger than or equal to zero (is %s) - ignoring!",
+                              item, start)
                 error = True
                 continue
             if length < 1:
-                print_error("LEN of " + item + "must be bigger than zero (is " + str(length) + ") - ignoring!")
+                logging.error("LEN of %s must be bigger than zero (is %s) - ignoring!",
+                            item, length)
                 error = True
                 continue
             tmp = insertTuple((start, start + length), ranges_123)
             if tmp is not None:
-                print_error(item + "overlaps with" + str(tmp))
+                logging.error("%s overlaps with %s", item, tmp)
                 error = True
                 continue
         elif "-" in item:
             frag_desc = item.split("-")
             if len(frag_desc) != 2:
-                print_error("Invalid range argument '" + item + "' - ignoring!")
+                logging.error("Invalid range argument '%s' - ignoring!", item)
                 error = True
                 continue
             try:
                 start = int(frag_desc[0], base=0)
             except ValueError:
-                print_error(
-                    "First part ('" + frag_desc[0] + "') of range argument '" + item + "' not parsable - ignoring!")
+                logging.error("First part ('%s') of range argument '%s' not parsable - ignoring!",
+                              frag_desc[0], item)
                 error = True
                 continue
             try:
                 end = int(frag_desc[1], base=0)
             except ValueError:
-                print_error(
-                    "Second part ('" + frag_desc[1] + "') of range argument '" + item + "' not parsable - ignoring!")
+                logging.error("Second part ('%s') of range argument '%s' not parsable - ignoring!",
+                              frag_desc[1], item)
                 error = True
                 continue
             if start < 0:
-                print_error(
-                    "START of " + item + "must be bigger than or equal to zero (is " + str(start) + ") - ignoring!")
+                logging.error("START of %s must be bigger than or equal to zero (is %d) - ignoring!",
+                              item, start)
                 error = True
                 continue
             if end <= start:
-                print_error("END of " + item + "must be bigger than START (START: " + str(start) + ", END: " + str(
-                    end) + ") - ignoring!")
+                logging.error("END of %s must be bigger than START (START: %d, END: %d) - ignoring!",
+                              item, start, end)
                 error = True
                 continue
             tmp = insertTuple((start, end), ranges_123)
             if tmp is not None:
-                print_error(item + " overlaps with " + str(tmp))
+                logging.error("%s overlaps with %s", item, tmp)
                 error = True
                 continue
         else:
-            print_error("Invalid range argument '{0}' - ignoring!".format(item))
+            logging.error("Invalid range argument '%s' - ignoring!", item)
             error = True
             continue
     if len(ranges_123) == 0:
-        print_error("No valid ranges! Aborting")
+        logging.error("No valid ranges! Aborting")
         cu.exitstatus = 1
         return None
     if error:
-        print_error("Errors during argument parsing detected. Aborting")
+        logging.error("Errors during argument parsing detected. Aborting")
         cu.exitstatus = 1
         return None
     # determine output file name
     if output_file is not None:
         # user specified output file name
         if output_file == file:
-            print_error("Input and output file are the same! Aborting")
+            logging.error("Input and output file are the same! Aborting")
             cu.exitstatus = 1
             return None
     else:
