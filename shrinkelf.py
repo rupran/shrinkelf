@@ -70,7 +70,7 @@ class EndOfSegmentException(Exception):
 
 def print_error(text):
     """ Print text to standard error. """
-    print(text, file=stderr)
+    logging.error(text)
 
 
 def insertTuple(item_03: Tuple[int, int], list_of_items: List[Tuple[int, int]]) -> Optional[Tuple[int, int]]:
