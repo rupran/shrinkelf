@@ -1197,16 +1197,13 @@ def computeMemoryInfoForFragment(current_fragment: FileFragment, src: c_void_p,
 #        in the section numbered section_number
 # \param current_range The currently processed input range
 # \param section_number The index of the current section
-# \param src The original ELF file handle
 # \param srcshdr The original section header for the current section
-# \param phdrnum The total nmber of program headers in the original file
-# \param section_ranges Array of Lists, containing all fragments for all sections
+# \param last A boolean indicating if we're processing a range which does not
+#             end in the current section
 #
-# \return Nothing, but updates the list at section_ranges[section_number] with
-#         a new FileFragment
+# \return A FileFragment for the currently processed range
 def computeFragmentForSection(current_range: Tuple[int, int], section_number: int,
-                              src: c_void_p, srcshdr: GElf_Shdr, phdrnum: c_size_t,
-                              section_ranges: List[List[FileFragment]], last: bool=False):
+                              srcshdr: GElf_Shdr, last: bool=False) -> FileFragment:
     current_fragment = FileFragment()
     # determine start and end addresses of section range in file
     if srcshdr.sh_type == SHT_NOBITS.value:
@@ -1245,11 +1242,7 @@ def computeFragmentForSection(current_range: Tuple[int, int], section_number: in
 
     current_fragment.section_align = 1 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_addralign
     current_fragment.section_offset = srcshdr.sh_offset
-
-    # memory layout of section range
-    computeMemoryInfoForFragment(current_fragment, src, srcshdr, phdrnum)
-
-    insertRange(current_fragment, section_ranges[section_number])
+    return current_fragment
 
 # FIXME: Doku
 # \brief Computes the ranges to keep per section
@@ -1259,7 +1252,8 @@ def computeFragmentForSection(current_range: Tuple[int, int], section_number: in
 # \param section_number Number of sections in `src`
 #
 # \return a List of lists containing the ranges (with additional information) per section
-def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], section_number: c_size_t) -> List[List[FileFragment]]:
+def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]],
+                         section_number: c_size_t) -> List[List[FileFragment]]:
     # number of segments in source file
     phdrnum: c_size_t = c_size_t(0)
     if libelf.elf_getphdrnum(src, byref(phdrnum)) != 0:
@@ -1269,9 +1263,8 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
     # current range to process
     r: int = 0
     # ranges split per section
-    section_ranges: List[List[FileFragment]] = [[]] * section_number.value
+    section_ranges: List[List[FileFragment]] = [[] for _ in range(section_number.value)]
     for current_section in range(0, section_number.value):
-        section_ranges[current_section] = []
         srcscn: Elf_Scn_p = libelf.elf_getscn(src, c_size_t(current_section))
         if not srcscn:
             logging.error("Could not retrieve source section data for section %d: %s",
@@ -1285,11 +1278,13 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
         offset: int = 0 if srcshdr.sh_type == SHT_NOBITS.value else srcshdr.sh_size
         # split ranges in section ranges and add layout data (ranges that end in section current_section)
         while r < len(ranges_27) and ranges_27[r][1] <= srcshdr.sh_offset + offset:
-            computeFragmentForSection(ranges_27[r], current_section, src, srcshdr, phdrnum, section_ranges)
+            current_fragment = computeFragmentForSection(ranges_27[r], current_section, srcshdr)
+            insertRange(current_fragment, section_ranges[current_section])
             r += 1
         # split ranges in section ranges and add layout data (range that begins in section current_section but does not end there)
         if r < len(ranges_27) and ranges_27[r][0] < srcshdr.sh_offset + offset:
-            computeFragmentForSection(ranges_27[r], current_section, src, srcshdr, phdrnum, section_ranges, last=True)
+            current_fragment = computeFragmentForSection(ranges_27[r], current_section, srcshdr, last=True)
+            insertRange(current_fragment, section_ranges[current_section])
         # If we had no ranges for the current section, add a 1 byte pseudo
         # entry to keep the section around
         if current_section > 0 and not section_ranges[current_section]:
@@ -1299,16 +1294,14 @@ def computeSectionRanges(src: c_void_p, ranges_27: List[Tuple[int, int]], sectio
             pseudo_fragment = FileFragment(start=0, end=target_size,
                                            section_offset=srcshdr.sh_offset,
                                            section_align=1)
-            computeMemoryInfoForFragment(pseudo_fragment, src, srcshdr, phdrnum)
             logging.debug(' created pseudo fragment with values (start %x,'\
-                          ' end %x, section_offset %x, memory_info(start %x,'\
-                          ' end %x, flags %x, align %x))', pseudo_fragment.start,
-                          pseudo_fragment.end, pseudo_fragment.section_offset,
-                          pseudo_fragment.memory_info.start,
-                          pseudo_fragment.memory_info.end,
-                          pseudo_fragment.memory_info.flags,
-                          pseudo_fragment.memory_info.align)
+                          ' end %x, section_offset %x', pseudo_fragment.start,
+                          pseudo_fragment.end, pseudo_fragment.section_offset)
             insertRange(pseudo_fragment, section_ranges[current_section])
+
+        # Compute the memory information structs for all new fragments
+        for fragment in section_ranges[current_section]:
+            computeMemoryInfoForFragment(fragment, src, srcshdr, phdrnum)
 
     return section_ranges
 
