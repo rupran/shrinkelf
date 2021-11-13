@@ -53,7 +53,7 @@ for library in store.get_library_objects():
 
     # Output to <output_dir>/<fullname>
     bname = os.path.basename(file_to_tailor)
-    out_path = os.path.join(output_dir, library.fullname[1:])
+    out_path = os.path.join(output_dir, library.fullname.lstrip('/'))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     keep_file = 'keep_file_{}'.format(bname)
@@ -78,15 +78,15 @@ with open(stats_file, 'r') as fd:
             continue
 
         filename = line.split(',')[0]
-        full_path = os.path.join(output_dir, filename)
+        full_path = os.path.join(output_dir, filename.lstrip('/'))
         if os.path.isfile(full_path):
-            if full_path not in run_times:
+            if filename not in run_times:
                 print('WARNING: no run times for {}'.format(filename))
                 lines[idx] += ',0,0'
                 continue
             else:
                 lines[idx] += ',{},{}'.format(os.stat(full_path).st_size,
-                                            run_times[full_path])
+                                              run_times[filename])
         else:
             print('WARNING: no shrunk file for {}'.format(filename))
             lines[idx] += ',{},{}'.format(0, 0)
