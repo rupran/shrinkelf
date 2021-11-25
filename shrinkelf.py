@@ -512,6 +512,8 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
             current_size = calculateOffset(tmp_111.offset, current_size) + tmp_111.fsize
         return current_size
     else:
+        logging.debug('creating ILP instance for section %d: %d fragments, fix_first: %s, fix_last: %s',
+                      index, size, fix_first, fix_last)
         s: Dict[Tuple[int, int], int] = {}
         d: Dict[Tuple[int, int], int] = {}
         for i in range(size):
