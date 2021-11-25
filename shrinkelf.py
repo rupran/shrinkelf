@@ -590,10 +590,22 @@ def solve_lp_instance(segments_37: List[FragmentRange], current_size, index, fix
 
             # If the first fragment inside the current section already
             # starts at an offset to the original section start, account
-            # for this offset by moving the section start back
-            first_offset_into_section = calculateOffset(first_fragment.offset, first_fragment.section_start) - first_fragment.section_start
+            # for this offset by moving the section start back to the original
+            # alignment for the start of the section.
+            first_offset_into_section = calculateOffset(first_fragment.offset,
+                                                        first_fragment.section_start) \
+                                        - first_fragment.section_start
             if first_offset_into_section > 0:
                 section_start -= first_offset_into_section
+                # The following case might happen if the first fragment is moved
+                # into a gap after the previous section (i.e., into a page that
+                # lies before the original beginning of the section). In order
+                # to keep correct alignment for the section and avoid wrongly
+                # overlapping any fragments, let's revert the forward shift for
+                # now and simply start in the following page.
+                if section_start < current_size:
+                    section_start += PAGESIZE
+                    current_size = section_start
             assert section_start >= current_size
             for fragment in sequence:
                 current_fragment = segments_37[fragment]
@@ -1640,9 +1652,9 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
                               section_ranges[i][0].section_shift,
                               srcshdr.sh_offset, len(section_ranges[i]))
                 for fxx, r in enumerate(section_ranges[i]):
-                    logging.debug('section_ranges[%d][%d]: start = %x, end = %x,'\
+                    logging.debug('section_ranges[%d][%d]: start = %x, end = %x, size = %x,'\
                                   ' section_shift = %x, section_offset = %x, fragment_shift = %x',
-                                  i, fxx, r.start, r.end, r.section_shift,
+                                  i, fxx, r.start, r.end, r.end - r.start, r.section_shift,
                                   r.section_offset, r.fragment_shift)
                 if len(section_ranges[i]) > 0:
                     logging.debug('max start + shift: %x',
