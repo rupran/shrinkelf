@@ -1356,6 +1356,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
         logging.error("Could not open input file %s", file)
         cu.exitstatus = 1
         return
+    src_mode: int = os.stat(srcfd).st_mode
     logging.debug('Working on file \'%s\'', output_file)
     cu.level += 1
     try:
@@ -1367,7 +1368,7 @@ def shrinkelf(ranges_34: List[Tuple[int, int]], file, output_file, permute_01, l
             raise cu
         cu.level += 1
         # file descriptor of output file
-        dstfd: int = os.open(output_file, os.O_WRONLY | os.O_CREAT, mode=0o777)
+        dstfd: int = os.open(output_file, os.O_WRONLY | os.O_CREAT, mode=src_mode)
         if dstfd < 0:
             logging.error("Could not open output file %s",output_file)
             raise cu
