@@ -18,6 +18,7 @@
 # along with shrinkelf.  If not, see <http://www.gnu.org/licenses/>.
 
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -42,7 +43,7 @@ store.load(store_path)
 # Create output directory if it does not exist
 os.makedirs(output_dir, exist_ok=True)
 
-tailor_dir = 'tailored_libs_{}/'.format(store_path)
+tailor_dir = 'tailored_libs_{}/'.format(os.path.basename(store_path))
 stats_file = '{}/stats.csv'.format(tailor_dir)
 run_times = {}
 
@@ -69,6 +70,19 @@ for library in store.get_library_objects():
     running_time = time.time() - time_before
 
     run_times[library.fullname] = running_time
+
+# Generate symlinks in appropiate directories
+for key, value in store.items():
+    if isinstance(value, str):
+        link_path = os.path.join(tailor_dir, key[1:])
+        if not os.path.islink(link_path):
+            continue
+        target_file = os.path.join(output_dir, key.lstrip('/'))
+        if os.path.islink(target_file):
+            print('symbolic link already exists: {}'.format(target_file))
+            continue
+        os.makedirs(os.path.dirname(target_file), exist_ok=True)
+        shutil.copy(link_path, target_file, follow_symlinks=False)
 
 with open(stats_file, 'r') as fd:
     lines = [l.strip() for l in fd.readlines()]
