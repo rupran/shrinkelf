@@ -354,7 +354,7 @@ def segmentOffsets(perm: Permutation, segments_07: List[FragmentRange], current_
                     current_size = calculateOffset(tmp_12.offset, current_size) + tmp_12.fsize
 
 
-def permute(segments_08: List[List[FragmentRange]], current_size: int) -> int:
+def permute(segments_08: List[List[FragmentRange]], current_size: int, section_aligns) -> int:
     """ Permute the address ranges for all sections.
 
     :param segments_08: the sections' contents
@@ -363,6 +363,7 @@ def permute(segments_08: List[List[FragmentRange]], current_size: int) -> int:
     :return: the size of the output file after inserting all sections
     """
     for i in range(1, len(segments_08)):
+        current_size = roundUp(current_size, section_aligns[i])
         perm = createPermutation(segments_08, i, current_size)
         # permute the address ranges of section i
         recursive_permute(perm, segments_08[i], 1)
@@ -862,7 +863,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
         loads += countLoadableSegmentRanges(ret.segments[i])
     # check if user want to permute address ranges
     if permute_ranges == PERMUTE_WITH_BRUTE_FORCE:
-        current_size = permute(ret.segments, current_size)
+        current_size = permute(ret.segments, current_size, ret.section_aligns)
         if current_size == 0:
             raise cu
     elif permute_ranges == PERMUTE_WITH_GUROBI:
@@ -872,6 +873,7 @@ def calculateNewFilelayout(ranges_13: List[List[FileFragment]], old_entries: int
     else:
         # simply push the address ranges together
         for i in range(1, size):
+            current_size = roundUp(current_size, ret.section_aligns[i])
             section_start = calculateOffset(ret.segments[i][0].section_start, current_size)
             for tmp_111 in ret.segments[i]:
                 tmp_111.shift = calculateOffset(tmp_111.offset, current_size) - tmp_111.offset
