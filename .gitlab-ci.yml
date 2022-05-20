@@ -17,12 +17,10 @@ cache:
 
 before_script:
   - python -V               # Print out python version for debugging
-  - apt-get update && apt-get install -y --no-install-recommends gcc-multilib
   - pip install virtualenv
   - virtualenv venv
   - source venv/bin/activate
-  - pip install coverage coverage-badge
-  - pip install .
+  - pip install coverage coverage-badge gurobipy pyelftools z3-solver
 
 test:
   stage: test
