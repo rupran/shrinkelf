@@ -3,6 +3,7 @@ import unittest
 import shutil
 import subprocess
 import tempfile
+import time
 
 from elftools.elf.elffile import ELFFile
 
@@ -31,7 +32,10 @@ class TestELFRemove(unittest.TestCase):
         if solver == 'gurobi' or solver == 'z3' or solver == 'brute-force':
             cmdline += ['-p', solver]
         cmdline += ['-o', output_path, INPUT_FILE_PATH]
-        return subprocess.run(cmdline)
+        before = time.time()
+        proc = subprocess.run(cmdline)
+        after = time.time()
+        return proc, after - before
 
     def test_gurobi(self):
         fd = open(INPUT_FILE_PATH, 'rb')
@@ -44,11 +48,14 @@ class TestELFRemove(unittest.TestCase):
                 rangefile.write(r)
             rangefile.flush()
 
-            proc = self.run_solver('gurobi', rangefile, SHRUNK_FILE_PATH_ILP)
+            proc, time = self.run_solver('gurobi', rangefile, SHRUNK_FILE_PATH_ILP)
             self.assertEqual(proc.returncode, 0)
 
         fd_shrunk = open(SHRUNK_FILE_PATH_ILP, 'rb')
         elf_after = ELFFile(fd_shrunk)
+        text_size = elf_after.get_section_by_name('.text')['sh_size']
+        TestELFRemove.ilp_size = text_size
+        TestELFRemove.ilp_time = time
 
     def test_z3(self):
         fd = open(INPUT_FILE_PATH, 'rb')
@@ -61,11 +68,14 @@ class TestELFRemove(unittest.TestCase):
                 rangefile.write(r)
             rangefile.flush()
 
-            proc = self.run_solver('z3', rangefile, SHRUNK_FILE_PATH_SMT)
+            proc, time = self.run_solver('z3', rangefile, SHRUNK_FILE_PATH_SMT)
             self.assertEqual(proc.returncode, 0)
 
         fd_shrunk = open(SHRUNK_FILE_PATH_SMT, 'rb')
         elf_after = ELFFile(fd_shrunk)
+        text_size = elf_after.get_section_by_name('.text')['sh_size']
+        TestELFRemove.smt_size = text_size
+        TestELFRemove.smt_time = time
 
     def test_brute(self):
         fd = open(INPUT_FILE_PATH, 'rb')
@@ -78,11 +88,14 @@ class TestELFRemove(unittest.TestCase):
                 rangefile.write(r)
             rangefile.flush()
 
-            proc = self.run_solver('brute-force', rangefile, SHRUNK_FILE_PATH_BRUTEFORCE)
+            proc, time = self.run_solver('brute-force', rangefile, SHRUNK_FILE_PATH_BRUTEFORCE)
             self.assertEqual(proc.returncode, 0)
 
         fd_shrunk = open(SHRUNK_FILE_PATH_BRUTEFORCE, 'rb')
         elf_after = ELFFile(fd_shrunk)
+        text_size = elf_after.get_section_by_name('.text')['sh_size']
+        TestELFRemove.brute_size = text_size
+        TestELFRemove.brute_time = time
 
     def test_shift(self):
         fd = open(INPUT_FILE_PATH, 'rb')
@@ -95,8 +108,23 @@ class TestELFRemove(unittest.TestCase):
                 rangefile.write(r)
             rangefile.flush()
 
-            proc = self.run_solver('', rangefile, SHRUNK_FILE_PATH_SMT)
+            proc, time = self.run_solver('', rangefile, SHRUNK_FILE_PATH_SMT)
             self.assertEqual(proc.returncode, 0)
 
         fd_shrunk = open(SHRUNK_FILE_PATH_SHIFT, 'rb')
         elf_after = ELFFile(fd_shrunk)
+        text_size = elf_after.get_section_by_name('.text')['sh_size']
+        TestELFRemove.shift_size = text_size
+        TestELFRemove.shift_time = time
+
+    @classmethod
+    def tearDownClass(cls):
+        print()
+        print('Shift: .text[sh_size] = {} in {}'.format(cls.shift_size,
+                                                        cls.shift_time))
+        print('Brute: .text[sh_size] = {} in {}'.format(cls.brute_size,
+                                                        cls.brute_time))
+        print('SMT  : .text[sh_size] = {} in {}'.format(cls.smt_size,
+                                                        cls.smt_time))
+        print('ILP  : .text[sh_size] = {} in {}'.format(cls.ilp_size,
+                                                        cls.ilp_time))
