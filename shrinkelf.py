@@ -220,7 +220,11 @@ def createPermutation(segments_01: List[List[FragmentRange]], index: int, curren
     ret: Permutation = Permutation(num_entries=len(segments_01[index]))
     ret.tmp = [0] * ret.num_entries
     ret.result = [0] * ret.num_entries
-    if current_size // PAGESIZE == segments_01[index][0].offset // PAGESIZE:
+    if index == 1:
+        fix_first = (segments_01[index][0].offset // PAGESIZE == 0)
+    else:
+        fix_first = segments_01[index-1][-1].fsize > 0 and (segments_01[index-1][-1].vaddr + segments_01[index-1][-1].msize) // PAGESIZE == segments_01[index][0].vaddr // PAGESIZE
+    if fix_first:
         # mark first element because it is on the same page as the previous section
         ret.tmp[0] = -1
         ret.result[0] = -1
@@ -264,6 +268,7 @@ def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
     """
     start_01 = 0
     end_01 = 0
+    offset_in_section = 0
     # look up for every position (ranges from 1 to the number of segments) which segment to insert
     for i in range(1, perm.num_entries + 1):
         if i == 1 and perm.tmp[0] == -1:
@@ -283,9 +288,13 @@ def evaluate(perm: Permutation, segments_02: List[FragmentRange]):
                     tmp_08 = segments_02[j]
                     if i == 1:
                         start_01 = tmp_08.offset
+                        # if the chosen first fragment starts at an offset
+                        # relative to the original section start, factor this
+                        # into the size calculation
+                        offset_in_section = calculateOffset(tmp_08.offset, tmp_08.section_start) - tmp_08.section_start
                         end_01 = tmp_08.offset
                     end_01 = calculateOffset(tmp_08.offset, end_01) + tmp_08.fsize
-    size = end_01 - start_01
+    size = end_01 - start_01 + offset_in_section
     if size < perm.size or perm.size == -1:
         # update currently best permutation if current permutation is better
         for i in range(0, perm.num_entries):
