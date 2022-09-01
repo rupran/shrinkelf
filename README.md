@@ -1,5 +1,10 @@
 # shrinkelf: a tool to shrink ELF files
 
+<p align="center">
+<img src="https://user-images.githubusercontent.com/6428272/187918585-cbefdc1b-ed14-4e37-8636-ae36d06cda4e.png" width="640" />
+</p>
+
+
 ## Description
 shrinkelf is a tool to shrink the disk size of ELF files to a minimal size
 after unused functions and their associated metadata (symbol table entries,
